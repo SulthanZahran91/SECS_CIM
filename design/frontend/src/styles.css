@@ -636,6 +636,7 @@ textarea {
   padding: 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
+  min-width: 0;
 }
 
 .event-generator,
@@ -647,7 +648,7 @@ textarea {
 
 .event-generator {
   flex: 1;
-  min-width: min(100%, 420px);
+  min-width: 0;
 }
 
 .event-generator-head,
@@ -666,6 +667,12 @@ textarea {
 
 .event-generator-preview {
   font-family: var(--font-mono);
+}
+
+.payload-editor {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
 }
 
 .event-report-card {

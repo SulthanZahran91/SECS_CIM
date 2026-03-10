@@ -119,8 +119,8 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 		}
 
 		switch pending.Action.Type {
-		case "event":
-			message, record, err := buildScheduledEventMessage(
+		case "send", "event":
+			message, record, err := buildScheduledSendMessage(
 				uint16(s.config.HSMS.SessionID),
 				s.nextMessageIDValue(),
 				pending,

@@ -217,24 +217,20 @@ func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
 	}
 }
 
-func TestRunScheduledBuildsStructuredEventReports(t *testing.T) {
+func TestRunScheduledBuildsGenericOutboundMessage(t *testing.T) {
 	store := New()
 	store.ClearLog()
 
 	rule := store.Snapshot().Rules[0]
 	rule.Actions = []model.RuleAction{
 		{
-			ID:      "action-1",
-			DelayMS: 0,
-			Type:    "event",
-			DataID:  "U4:0",
-			CEID:    "U4:1001",
-			Reports: []model.RuleActionReport{
-				{
-					RPTID:  "U4:5001",
-					Values: []string{"L:[U4:1, A:\"LP01\"]", "7"},
-				},
-			},
+			ID:       "action-1",
+			DelayMS:  0,
+			Type:     "send",
+			Stream:   6,
+			Function: 11,
+			WBit:     true,
+			Body:     "L:2 <A \"TRANSFER_INITIATED\"> <I 7>",
 		},
 	}
 	if _, err := store.UpdateRule(rule); err != nil {
@@ -258,46 +254,30 @@ func TestRunScheduledBuildsStructuredEventReports(t *testing.T) {
 	}
 
 	if len(result.Emitted) != 1 || len(result.Outbound) != 1 {
-		t.Fatalf("expected one structured event, got emitted=%d outbound=%d", len(result.Emitted), len(result.Outbound))
+		t.Fatalf("expected one outbound message, got emitted=%d outbound=%d", len(result.Emitted), len(result.Outbound))
 	}
 
 	event := result.Outbound[0]
-	if ceid, ok := hsms.ExtractS6F11CEID(event); !ok || ceid != "1001" {
-		t.Fatalf("expected structured CEID 1001, got %#v", event)
+	if event.Stream != 6 || event.Function != 11 || !event.WBit {
+		t.Fatalf("expected S6F11 W outbound message, got %#v", event)
 	}
-	if event.Body == nil || len(event.Body.Children) != 3 {
-		t.Fatalf("expected structured S6F11 body, got %#v", event.Body)
+	if event.Body == nil || event.Body.Type != hsms.ItemList || len(event.Body.Children) != 2 {
+		t.Fatalf("expected generic SML body, got %#v", event.Body)
 	}
-
-	reports := event.Body.Children[2]
-	if reports.Type != hsms.ItemList || len(reports.Children) != 1 {
-		t.Fatalf("expected one report list, got %#v", reports)
+	if got := event.Body.Children[0].ScalarValue(); got != "TRANSFER_INITIATED" {
+		t.Fatalf("expected first item TRANSFER_INITIATED, got %q", got)
 	}
-	report := reports.Children[0]
-	if report.Type != hsms.ItemList || len(report.Children) != 2 {
-		t.Fatalf("expected report pair, got %#v", report)
+	if got := event.Body.Children[1].ScalarValue(); got != "7" {
+		t.Fatalf("expected second item 7, got %q", got)
 	}
-	if got := report.Children[0].ScalarValue(); got != "5001" {
-		t.Fatalf("expected RPTID 5001, got %q", got)
-	}
-	values := report.Children[1]
-	if values.Type != hsms.ItemList || len(values.Children) != 2 {
-		t.Fatalf("expected two report values, got %#v", values)
-	}
-	if values.Children[0].Type != hsms.ItemList || len(values.Children[0].Children) != 2 {
-		t.Fatalf("expected first report value to be a nested list item, got %#v", values.Children[0])
-	}
-	if got := values.Children[0].Children[0].ScalarValue(); got != "1" {
-		t.Fatalf("expected nested list first value 1, got %q", got)
-	}
-	if got := values.Children[0].Children[1].ScalarValue(); got != "LP01" {
-		t.Fatalf("expected nested list second value LP01, got %q", got)
-	}
-	if got := values.Children[1].ScalarValue(); got != "7" {
-		t.Fatalf("expected second report value 7, got %q", got)
+	if got := event.RawSML(); got != "S6F11 W L:2 <A \"TRANSFER_INITIATED\"> <I4 7>" {
+		t.Fatalf("expected raw SML to reflect parsed item types, got %q", got)
 	}
 	if result.Emitted[0].Detail.RawSML != event.RawSML() {
 		t.Fatalf("expected logged raw SML to match outbound message, got %q vs %q", result.Emitted[0].Detail.RawSML, event.RawSML())
+	}
+	if result.Emitted[0].Label != "Event Report" {
+		t.Fatalf("expected generic S6F11 payload to use default label, got %#v", result.Emitted[0])
 	}
 }
 

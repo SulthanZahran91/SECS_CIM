@@ -17,7 +17,7 @@ Current reality:
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
-- Rule-driven `S6F11` actions now use the actual `DATAID` / `CEID` / report-list shape, with report values declared as SECS item expressions across the UI, YAML config, runtime logging, and outbound HSMS encoding.
+- Rule-driven outbound actions can now declare generic `SxFy` messages with hand-authored SECS item bodies (`L`, `A`, signed/unsigned integers, `B`, `BOOLEAN`) across the UI, YAML config, runtime logging, and outbound HSMS encoding.
 
 The design references remain:
 
@@ -105,8 +105,8 @@ Done:
 - UI supports editing conditions, reply templates, and actions
 - The backend now keeps a live runtime state store separate from persisted `initial_state`
 - The backend can match decoded inbound commands against rules in order
-- Matched rules generate immediate reply records plus delayed event/mutate actions
-- Event actions can now declare generator-style `S6F11` reports and variable values instead of only a single `CEID`
+- Matched rules generate immediate reply records plus delayed send/mutate actions
+- Send actions can now declare arbitrary outbound `SxFy` messages with raw SECS item payloads instead of only a fixed event shape
 - Scheduled mutations update the live state store without dirtying persisted config
 - Basic rule-match diagnostics are recorded on inbound message records for matched and near-miss cases
 - A simulator controller now wires the rule engine into `/api/sim/start`, `/api/sim/stop`, `/api/sim/status`, and a decoded injection path for backend-driven testing
@@ -177,8 +177,8 @@ Done:
   - `S1F17` / `S1F18`
   - `S2F31` / `S2F32`
   - `S6F11` / `S6F12`
-- Rule-driven `S2F42` replies and scheduled `S6F11` events are now encoded and sent over the selected HSMS session
-- Structured `S6F11` actions now encode the actual `DATAID` / `CEID` / report-list shape from the rule generator model
+- Rule-driven `S2F42` replies and scheduled outbound messages are now encoded and sent over the selected HSMS session
+- The SECS-II item codec now supports the hand-authored payload types used by the outbound message editor, including signed integer items and nested list parsing from SML-like text
 - Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
 
 Remaining:
@@ -203,7 +203,7 @@ Done:
 - Live-update stream disconnects now surface as reconnecting warnings in the UI
 - The message monitor now supports paused vs. live-tail behavior, plus a jump-to-latest affordance for sustained traffic
 - The HSMS tab now shows `restart required` only for unapplied connection-setting changes, and that indicator clears after a successful stop/start cycle
-- The Rules tab now uses a generator-style `S6F11` editor with explicit `DATAID`, `CEID`, `RPTID`, and `V` item declarations
+- The Rules tab now uses a generic outbound-message editor with explicit `Stream`, `Function`, `W-Bit`, and hand-authored body text instead of a fixed `S6F11` report builder
 
 Remaining:
 

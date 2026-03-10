@@ -3,7 +3,6 @@ import type {
   MessageRecord,
   Rule,
   RuleAction,
-  RuleActionReport,
   RuleCondition,
   Snapshot,
 } from "../types";
@@ -25,12 +24,11 @@ function normalizeRule(rule: Rule): Rule {
 }
 
 function normalizeRuleAction(action: RuleAction): RuleAction {
+  const rawType = (action as RuleAction & { type?: string }).type;
+  const type: RuleAction["type"] = rawType === "mutate" ? "mutate" : "send";
   return {
     ...action,
-    reports: ensureArray<RuleActionReport>(action.reports).map((report) => ({
-      ...report,
-      values: ensureArray<string>(report.values),
-    })),
+    type,
   };
 }
 

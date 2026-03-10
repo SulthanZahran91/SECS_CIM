@@ -90,19 +90,15 @@ type RuleReply struct {
 }
 
 type RuleAction struct {
-	ID      string             `json:"id"`
-	DelayMS int                `json:"delayMs"`
-	Type    string             `json:"type"`
-	DataID  string             `json:"dataId,omitempty"`
-	CEID    string             `json:"ceid,omitempty"`
-	Reports []RuleActionReport `json:"reports,omitempty"`
-	Target  string             `json:"target,omitempty"`
-	Value   string             `json:"value,omitempty"`
-}
-
-type RuleActionReport struct {
-	RPTID  string   `json:"rptid,omitempty"`
-	Values []string `json:"values"`
+	ID       string `json:"id"`
+	DelayMS  int    `json:"delayMs"`
+	Type     string `json:"type"`
+	Stream   int    `json:"stream,omitempty"`
+	Function int    `json:"function,omitempty"`
+	WBit     bool   `json:"wbit,omitempty"`
+	Body     string `json:"body,omitempty"`
+	Target   string `json:"target,omitempty"`
+	Value    string `json:"value,omitempty"`
 }
 
 type MessageRecord struct {
@@ -190,25 +186,7 @@ func cloneSlice[T any](src []T) []T {
 }
 
 func cloneRuleActions(src []RuleAction) []RuleAction {
-	cloned := make([]RuleAction, 0, len(src))
-	for _, action := range src {
-		actionCopy := action
-		actionCopy.Reports = cloneRuleActionReports(action.Reports)
-		cloned = append(cloned, actionCopy)
-	}
-
-	return cloned
-}
-
-func cloneRuleActionReports(src []RuleActionReport) []RuleActionReport {
-	cloned := make([]RuleActionReport, 0, len(src))
-	for _, report := range src {
-		reportCopy := report
-		reportCopy.Values = cloneSlice(report.Values)
-		cloned = append(cloned, reportCopy)
-	}
-
-	return cloned
+	return cloneSlice(src)
 }
 
 func SortActions(actions []RuleAction) {

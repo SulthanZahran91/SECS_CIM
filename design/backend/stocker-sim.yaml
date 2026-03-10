@@ -53,13 +53,11 @@ rules:
       ack: 0
     events:
       - delay_ms: 300
-        type: event
-        data_id: "U4:0"
-        ceid: "U4:1001"
-        reports:
-          - rptid: "U4:5001"
-            values:
-              - "L:[U4:1, A:\"LP01\"]"
+        type: send
+        stream: 6
+        function: 11
+        wbit: true
+        body: 'L:1 <A "TRANSFER_INITIATED">'
       - delay_ms: 1200
         type: mutate
         target: carriers.CARR001.location
@@ -69,13 +67,11 @@ rules:
         target: ports.LP01
         value: empty
       - delay_ms: 1200
-        type: event
-        data_id: "U4:0"
-        ceid: "U4:1002"
-        reports:
-          - rptid: "U4:5002"
-            values:
-              - "L:[U4:1, A:\"SHELF_A01\"]"
+        type: send
+        stream: 6
+        function: 11
+        wbit: true
+        body: 'L:1 <A "TRANSFER_COMPLETED">'
   - name: reject when blocked
     enabled: true
     match:
@@ -101,5 +97,8 @@ rules:
       ack: 0
     events:
       - delay_ms: 200
-        type: event
-        ceid: LOCATE_COMPLETE
+        type: send
+        stream: 6
+        function: 11
+        wbit: true
+        body: 'L:1 <A "LOCATE_COMPLETE">'

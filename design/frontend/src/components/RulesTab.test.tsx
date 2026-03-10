@@ -26,27 +26,24 @@ function RulesTabHarness() {
 }
 
 describe("RulesTab", () => {
-  it("edits event actions through the generator-style report builder", async () => {
+  it("edits send actions through the generic SML body editor", async () => {
     const user = userEvent.setup();
 
     render(<RulesTabHarness />);
 
-    expect(screen.getByText("Actual Event Report Send structure")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("TRANSFER_INITIATED")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("U4:0")).toBeInTheDocument();
+    expect(screen.getByText("Generic outbound SECS message")).toBeInTheDocument();
+    expect(screen.getByText("S6F11 W")).toBeInTheDocument();
+    expect(screen.getByDisplayValue('L:1 <A "TRANSFER_INITIATED">')).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "+ Report" }));
-    const rptidInput = await screen.findByLabelText("RPTID Item");
-    await user.type(rptidInput, "5001");
+    const bodyInput = screen.getByLabelText("Body (SML)");
+    fireEvent.change(bodyInput, {
+      target: { value: 'L:2\n  <A "TRANSFER_INITIATED">\n  <I 7>' },
+    });
 
-    await user.click(screen.getByRole("button", { name: "+ Value" }));
-    const valueInput = await screen.findByPlaceholderText('e.g. A:LP01, U4:100, or L:[U4:1, A:"LP01"]');
+    await user.selectOptions(screen.getByLabelText("W-Bit"), "false");
 
-    fireEvent.change(valueInput, { target: { value: 'L:[U4:1, A:"LP01"]' } });
-
-    expect(screen.getByDisplayValue("5001")).toBeInTheDocument();
-    expect(screen.getByDisplayValue('L:[U4:1, A:"LP01"]')).toBeInTheDocument();
-    expect(screen.getByText(/1 RPT/)).toBeInTheDocument();
-    expect(screen.getByText(/1 V/)).toBeInTheDocument();
+    expect(bodyInput).toHaveValue('L:2\n  <A "TRANSFER_INITIATED">\n  <I 7>');
+    expect(screen.getByText("S6F11")).toBeInTheDocument();
+    expect(screen.getByText(/Handwrite the outbound message directly/)).toBeInTheDocument();
   });
 });

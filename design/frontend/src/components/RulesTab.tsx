@@ -1,5 +1,5 @@
 import { ActionButton, Badge, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
-import type { Rule, RuleAction, RuleActionReport, RuleCondition } from "../types";
+import type { Rule, RuleAction, RuleCondition } from "../types";
 
 interface RulesTabProps {
   rules: Rule[];
@@ -19,14 +19,15 @@ function toNumber(value: string): number {
 }
 
 function createAction(type: RuleAction["type"]): RuleAction {
-  return type === "event"
+  return type === "send"
     ? {
         id: crypto.randomUUID(),
         delayMs: 0,
         type,
-        dataId: "U4:0",
-        ceid: "",
-        reports: [],
+        stream: 6,
+        function: 11,
+        wbit: true,
+        body: 'L:1 <A "EVENT">',
       }
     : {
         id: crypto.randomUUID(),
@@ -38,14 +39,15 @@ function createAction(type: RuleAction["type"]): RuleAction {
 }
 
 function convertAction(type: RuleAction["type"], action: RuleAction): RuleAction {
-  return type === "event"
+  return type === "send"
     ? {
         id: action.id,
         delayMs: action.delayMs,
         type,
-        dataId: action.dataId ?? "U4:0",
-        ceid: action.ceid ?? "",
-        reports: action.reports ?? [],
+        stream: action.stream ?? 6,
+        function: action.function ?? 11,
+        wbit: action.wbit ?? true,
+        body: action.body ?? "",
       }
     : {
         id: action.id,
@@ -60,26 +62,10 @@ function sortActions(actions: RuleAction[]): RuleAction[] {
   return [...actions].sort((left, right) => left.delayMs - right.delayMs || left.id.localeCompare(right.id));
 }
 
-function eventSummary(action: RuleAction): string {
-  const reportCount = action.reports?.length ?? 0;
-  const valueCount = (action.reports ?? []).reduce((total, report) => total + report.values.length, 0);
-  const ceid = action.ceid?.trim() || "unset";
-  if (reportCount === 0) {
-    return `S6F11 DATAID=${action.dataId?.trim() || "U4:0"} CEID=${ceid}`;
-  }
-
-  return `S6F11 DATAID=${action.dataId?.trim() || "U4:0"} CEID=${ceid} · ${reportCount} RPT · ${valueCount} V`;
-}
-
-function createReport(): RuleActionReport {
-  return {
-    rptid: "",
-    values: [],
-  };
-}
-
-function createReportValue(): string {
-  return "";
+function sendSummary(action: RuleAction): string {
+  const stream = action.stream ?? 0;
+  const fn = action.function ?? 0;
+  return `S${stream}F${fn}${action.wbit ? " W" : ""}`;
 }
 
 export function RulesTab({
@@ -366,8 +352,8 @@ function RuleCard({
             <div className="rule-section-header">
               <div className="rule-section-title">Then Side Effects</div>
               <div className="button-row">
-                <ActionButton variant="accent" onClick={() => updateActions([...rule.actions, createAction("event")])}>
-                  + Event
+                <ActionButton variant="accent" onClick={() => updateActions([...rule.actions, createAction("send")])}>
+                  + Message
                 </ActionButton>
                 <ActionButton
                   variant="accent"
@@ -396,7 +382,7 @@ function RuleCard({
                             );
                             updateActions(nextActions);
                           }}
-                          options={["event", "mutate"]}
+                          options={["send", "mutate"]}
                           width={100}
                         />
                         <LabeledInput
@@ -412,188 +398,82 @@ function RuleCard({
                           type="number"
                           mono
                         />
-                        {action.type === "event" ? (
+                        {action.type === "send" ? (
                           <div className="event-generator">
                             <div className="event-generator-head">
-                              <Badge tone="yellow">S6F11</Badge>
-                              <span className="event-generator-copy">Actual Event Report Send structure</span>
-                              <span className="event-generator-preview">{eventSummary(action)}</span>
+                              <Badge tone="yellow">{sendSummary(action)}</Badge>
+                              <span className="event-generator-copy">Generic outbound SECS message</span>
                             </div>
                             <div className="field-row compact" style={{ flexWrap: "wrap" }}>
                               <LabeledInput
-                                label="DATAID Item"
-                                value={action.dataId ?? "U4:0"}
+                                label="Stream"
+                                value={action.stream ?? 0}
                                 onChange={(value) => {
                                   const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, dataId: value } : item,
+                                    item.id === action.id ? { ...item, stream: toNumber(value) } : item,
                                   );
                                   updateActions(nextActions);
                                 }}
-                                width={180}
+                                width={80}
+                                type="number"
                                 mono
+                                min={0}
+                                max={127}
                               />
                               <LabeledInput
-                                label="CEID Item"
-                                value={action.ceid ?? ""}
+                                label="Function"
+                                value={action.function ?? 0}
                                 onChange={(value) => {
                                   const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, ceid: value } : item,
+                                    item.id === action.id ? { ...item, function: toNumber(value) } : item,
                                   );
                                   updateActions(nextActions);
                                 }}
-                                width={180}
+                                width={90}
+                                type="number"
                                 mono
+                                min={0}
+                                max={255}
+                              />
+                              <LabeledSelect
+                                label="W-Bit"
+                                value={String(action.wbit ?? false)}
+                                onChange={(value) => {
+                                  const nextActions = rule.actions.map((item) =>
+                                    item.id === action.id ? { ...item, wbit: value === "true" } : item,
+                                  );
+                                  updateActions(nextActions);
+                                }}
+                                options={["true", "false"]}
+                                width={100}
                               />
                             </div>
-                            <div className="event-generator-toolbar">
-                              <div className="rule-section-title" style={{ marginBottom: 0 }}>Reports</div>
-                              <ActionButton
-                                variant="accent"
-                                onClick={() => {
+                            <label className="field-group">
+                              <span className="field-label">Body (SML)</span>
+                              <textarea
+                                className="field-input mono payload-editor"
+                                value={action.body ?? ""}
+                                onChange={(event) => {
                                   const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id
-                                      ? {
-                                          ...item,
-                                          reports: [...(item.reports ?? []), createReport()],
-                                        }
-                                      : item,
+                                    item.id === action.id ? { ...item, body: event.target.value } : item,
                                   );
                                   updateActions(nextActions);
                                 }}
-                              >
-                                + Report
-                              </ActionButton>
-                            </div>
-                            {(action.reports?.length ?? 0) === 0 ? (
-                              <div className="empty-copy">Empty report list. Add a report to declare `RPTID` plus its `V` items.</div>
-                            ) : (
-                              <div className="stack-list">
-                                {(action.reports ?? []).map((report, reportIndex) => (
-                                  <div className="event-report-card" key={`${action.id}-report-${reportIndex}`}>
-                                    <div className="field-row compact" style={{ flexWrap: "wrap" }}>
-                                      <LabeledInput
-                                        label="RPTID Item"
-                                        value={report.rptid}
-                                        onChange={(value) => {
-                                          const nextActions = rule.actions.map((item) => {
-                                            if (item.id !== action.id) {
-                                              return item;
-                                            }
-
-                                            const nextReports = [...(item.reports ?? [])];
-                                            nextReports[reportIndex] = { ...report, rptid: value };
-                                            return { ...item, reports: nextReports };
-                                          });
-                                          updateActions(nextActions);
-                                        }}
-                                        width={180}
-                                        mono
-                                      />
-                                      <ActionButton
-                                        variant="danger"
-                                        onClick={() => {
-                                          const nextActions = rule.actions.map((item) =>
-                                            item.id === action.id
-                                              ? {
-                                                  ...item,
-                                                  reports: (item.reports ?? []).filter((_, index) => index !== reportIndex),
-                                                }
-                                              : item,
-                                          );
-                                          updateActions(nextActions);
-                                        }}
-                                      >
-                                        Remove Report
-                                      </ActionButton>
-                                    </div>
-                                    <div className="event-generator-toolbar">
-                                      <div className="rule-section-title" style={{ marginBottom: 0 }}>Report Values</div>
-                                      <ActionButton
-                                        variant="accent"
-                                        onClick={() => {
-                                          const nextActions = rule.actions.map((item) => {
-                                            if (item.id !== action.id) {
-                                              return item;
-                                            }
-
-                                            const nextReports = [...(item.reports ?? [])];
-                                            nextReports[reportIndex] = {
-                                              ...report,
-                                              values: [...report.values, createReportValue()],
-                                            };
-                                            return { ...item, reports: nextReports };
-                                          });
-                                          updateActions(nextActions);
-                                        }}
-                                      >
-                                        + Value
-                                      </ActionButton>
-                                    </div>
-                                    {report.values.length === 0 ? (
-                                      <div className="empty-copy">No `V` items in this report yet.</div>
-                                    ) : (
-                                      <div className="stack-list">
-                                        {report.values.map((reportValue, valueIndex) => (
-                                          <div
-                                            className="condition-row event-variable-row"
-                                            key={`${action.id}-report-${reportIndex}-value-${valueIndex}`}
-                                          >
-                                            <div className="field-group" style={{ flex: 1 }}>
-                                              <span className="field-label">V Item</span>
-                                              <input
-                                                className="field-input mono"
-                                                value={reportValue}
-                                                onChange={(event) => {
-                                                  const nextActions = rule.actions.map((item) => {
-                                                    if (item.id !== action.id) {
-                                                      return item;
-                                                    }
-
-                                                    const nextReports = [...(item.reports ?? [])];
-                                                    const nextValues = [...report.values];
-                                                    nextValues[valueIndex] = event.target.value;
-                                                    nextReports[reportIndex] = { ...report, values: nextValues };
-                                                    return { ...item, reports: nextReports };
-                                                  });
-                                                  updateActions(nextActions);
-                                                }}
-                                                placeholder='e.g. A:LP01, U4:100, or L:[U4:1, A:"LP01"]'
-                                              />
-                                            </div>
-                                            <button
-                                              className="icon-button danger"
-                                              onClick={() => {
-                                                const nextActions = rule.actions.map((item) => {
-                                                  if (item.id !== action.id) {
-                                                    return item;
-                                                  }
-
-                                                  const nextReports = [...(item.reports ?? [])];
-                                                  nextReports[reportIndex] = {
-                                                    ...report,
-                                                    values: report.values.filter((_, index) => index !== valueIndex),
-                                                  };
-                                                  return { ...item, reports: nextReports };
-                                                });
-                                                updateActions(nextActions);
-                                              }}
-                                              type="button"
-                                            >
-                                              ×
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
+                                placeholder={'L:2\n  <A "TRANSFER">\n  <I 1>'}
+                                rows={6}
+                                spellCheck={false}
+                              />
+                            </label>
                             <div className="meta-note">
-                              `S6F11` is `L,3 [DATAID, CEID, report-list]`. Each report is `L,2 [RPTID, L:n of V]`.
-                              Use item expressions such as <code>A:TRANSFER</code>, <code>U4:1001</code>, or
+                              Handwrite the outbound message directly. Supported body syntax matches the monitor style:
                               {" "}
-                              <code>L:[U4:1, A:&quot;LP01&quot;]</code>. `VID` belongs to annotated event reports, not `S6F11`.
+                              <code>L:n</code>, <code>&lt;A "text"&gt;</code>, <code>&lt;I 1&gt;</code>,
+                              {" "}
+                              <code>&lt;I1 -1&gt;</code>, <code>&lt;I2 -2&gt;</code>, <code>&lt;I4 -3&gt;</code>,
+                              {" "}
+                              <code>&lt;U1 1&gt;</code>, <code>&lt;U2 2&gt;</code>, <code>&lt;U4 4&gt;</code>,
+                              {" "}
+                              <code>&lt;B 0x00&gt;</code>, and <code>&lt;BOOLEAN TRUE&gt;</code>.
                             </div>
                           </div>
                         ) : (

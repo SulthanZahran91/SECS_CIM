@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"secsim/design/backend/internal/hsms"
 	"secsim/design/backend/internal/model"
 )
 
@@ -54,13 +55,17 @@ type yamlRuleReply struct {
 }
 
 type yamlRuleAction struct {
-	DelayMS int                    `yaml:"delay_ms"`
-	Type    string                 `yaml:"type"`
-	DataID  string                 `yaml:"data_id,omitempty"`
-	CEID    string                 `yaml:"ceid,omitempty"`
-	Reports []yamlRuleActionReport `yaml:"reports,omitempty"`
-	Target  string                 `yaml:"target,omitempty"`
-	Value   string                 `yaml:"value,omitempty"`
+	DelayMS  int                    `yaml:"delay_ms"`
+	Type     string                 `yaml:"type"`
+	Stream   int                    `yaml:"stream,omitempty"`
+	Function int                    `yaml:"function,omitempty"`
+	WBit     *bool                  `yaml:"wbit,omitempty"`
+	Body     string                 `yaml:"body,omitempty"`
+	DataID   string                 `yaml:"data_id,omitempty"`
+	CEID     string                 `yaml:"ceid,omitempty"`
+	Reports  []yamlRuleActionReport `yaml:"reports,omitempty"`
+	Target   string                 `yaml:"target,omitempty"`
+	Value    string                 `yaml:"value,omitempty"`
 }
 
 type yamlRuleActionReport struct {
@@ -136,16 +141,12 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 		}
 
 		for _, actionConfig := range ruleConfig.ruleActions() {
-			rule.Actions = append(rule.Actions, model.RuleAction{
-				ID:      fmt.Sprintf("action-%d", actionID),
-				DelayMS: actionConfig.DelayMS,
-				Type:    actionConfig.Type,
-				DataID:  actionConfig.DataID,
-				CEID:    actionConfig.CEID,
-				Reports: ruleActionReportsFromYAML(actionConfig.Reports),
-				Target:  actionConfig.Target,
-				Value:   actionConfig.Value,
-			})
+			action, err := ruleActionFromYAML(actionConfig)
+			if err != nil {
+				return model.Snapshot{}, fmt.Errorf("%w: invalid rule action in %s: %v", ErrInvalidConfig, path, err)
+			}
+			action.ID = fmt.Sprintf("action-%d", actionID)
+			rule.Actions = append(rule.Actions, action)
 			actionID++
 		}
 		model.SortActions(rule.Actions)
@@ -215,15 +216,21 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 		}
 
 		for _, action := range rule.Actions {
-			ruleConfig.Events = append(ruleConfig.Events, yamlRuleAction{
+			actionConfig := yamlRuleAction{
 				DelayMS: action.DelayMS,
 				Type:    action.Type,
-				DataID:  action.DataID,
-				CEID:    action.CEID,
-				Reports: ruleActionReportsToYAML(action.Reports),
-				Target:  action.Target,
-				Value:   action.Value,
-			})
+			}
+			switch action.Type {
+			case "send":
+				actionConfig.Stream = action.Stream
+				actionConfig.Function = action.Function
+				actionConfig.WBit = boolPointer(action.WBit)
+				actionConfig.Body = action.Body
+			case "mutate":
+				actionConfig.Target = action.Target
+				actionConfig.Value = action.Value
+			}
+			ruleConfig.Events = append(ruleConfig.Events, actionConfig)
 		}
 		rules = append(rules, ruleConfig)
 	}
@@ -274,41 +281,120 @@ func (r yamlRule) ruleActions() []yamlRuleAction {
 	return r.Actions
 }
 
-func ruleActionReportsFromYAML(src []yamlRuleActionReport) []model.RuleActionReport {
-	reports := make([]model.RuleActionReport, 0, len(src))
-	for _, report := range src {
-		reports = append(reports, model.RuleActionReport{
-			RPTID:  report.RPTID,
-			Values: ruleActionValuesFromYAML(report),
-		})
+func ruleActionFromYAML(action yamlRuleAction) (model.RuleAction, error) {
+	switch action.Type {
+	case "mutate":
+		return model.RuleAction{
+			DelayMS: action.DelayMS,
+			Type:    "mutate",
+			Target:  action.Target,
+			Value:   action.Value,
+		}, nil
+	case "send":
+		wbit := false
+		if action.WBit != nil {
+			wbit = *action.WBit
+		}
+		return model.RuleAction{
+			DelayMS:  action.DelayMS,
+			Type:     "send",
+			Stream:   action.Stream,
+			Function: action.Function,
+			WBit:     wbit,
+			Body:     action.Body,
+		}, nil
+	case "event":
+		if strings.TrimSpace(action.Body) != "" || action.Stream != 0 || action.Function != 0 || action.WBit != nil {
+			stream := action.Stream
+			function := action.Function
+			wbit := false
+			if action.WBit != nil {
+				wbit = *action.WBit
+			}
+			if action.Type == "event" {
+				if stream == 0 {
+					stream = 6
+				}
+				if function == 0 {
+					function = 11
+				}
+				if action.WBit == nil {
+					wbit = true
+				}
+			}
+			return model.RuleAction{
+				DelayMS:  action.DelayMS,
+				Type:     "send",
+				Stream:   stream,
+				Function: function,
+				WBit:     wbit,
+				Body:     action.Body,
+			}, nil
+		}
+		return legacyStructuredSendAction(action)
+	default:
+		return model.RuleAction{}, fmt.Errorf("unsupported action type %q", action.Type)
 	}
-
-	return reports
 }
 
-func ruleActionValuesFromYAML(report yamlRuleActionReport) []string {
-	if len(report.Values) > 0 || len(report.LegacyVariables) == 0 {
-		return append(make([]string, 0, len(report.Values)), report.Values...)
+func legacyStructuredSendAction(action yamlRuleAction) (model.RuleAction, error) {
+	item, err := legacyStructuredEventItem(action)
+	if err != nil {
+		return model.RuleAction{}, err
 	}
-
-	values := make([]string, 0, len(report.LegacyVariables))
-	for _, variable := range report.LegacyVariables {
-		values = append(values, variable.Value)
-	}
-
-	return values
+	return model.RuleAction{
+		DelayMS:  action.DelayMS,
+		Type:     "send",
+		Stream:   6,
+		Function: 11,
+		WBit:     true,
+		Body:     item.Compact(),
+	}, nil
 }
 
-func ruleActionReportsToYAML(src []model.RuleActionReport) []yamlRuleActionReport {
-	reports := make([]yamlRuleActionReport, 0, len(src))
-	for _, report := range src {
-		reports = append(reports, yamlRuleActionReport{
-			RPTID:  report.RPTID,
-			Values: append(make([]string, 0, len(report.Values)), report.Values...),
-		})
+func legacyStructuredEventItem(action yamlRuleAction) (hsms.Item, error) {
+	dataIDItem, err := parseLegacyEventExpression(firstNonEmpty(action.DataID, "U4:0"))
+	if err != nil {
+		return hsms.Item{}, fmt.Errorf("parse legacy event DATAID %q: %w", action.DataID, err)
+	}
+	ceidItem, err := parseLegacyEventExpression(action.CEID)
+	if err != nil {
+		return hsms.Item{}, fmt.Errorf("parse legacy event CEID %q: %w", action.CEID, err)
 	}
 
-	return reports
+	reports := make([]hsms.Item, 0, len(action.Reports))
+	for _, report := range action.Reports {
+		rptidItem, err := parseLegacyEventExpression(firstNonEmpty(report.RPTID, "U4:0"))
+		if err != nil {
+			return hsms.Item{}, fmt.Errorf("parse legacy event RPTID %q: %w", report.RPTID, err)
+		}
+
+		reportValues := report.Values
+		if len(reportValues) == 0 && len(report.LegacyVariables) > 0 {
+			reportValues = make([]string, 0, len(report.LegacyVariables))
+			for _, variable := range report.LegacyVariables {
+				reportValues = append(reportValues, variable.Value)
+			}
+		}
+
+		values := make([]hsms.Item, 0, len(reportValues))
+		for _, value := range reportValues {
+			valueItem, err := parseLegacyEventExpression(value)
+			if err != nil {
+				return hsms.Item{}, fmt.Errorf("parse legacy event report value %q: %w", value, err)
+			}
+			values = append(values, valueItem)
+		}
+
+		reports = append(reports, hsms.List(rptidItem, hsms.List(values...)))
+	}
+
+	return hsms.List(dataIDItem, ceidItem, hsms.List(reports...)), nil
+}
+
+func boolPointer(value bool) *bool {
+	copy := value
+	return &copy
 }
 
 func nextIdentifierValue(prefix string, ids []string) int {

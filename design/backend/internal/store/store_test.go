@@ -100,8 +100,8 @@ func TestUpdateRuleSortsActionsAndDefaultsBlankName(t *testing.T) {
 	rule := store.Snapshot().Rules[0]
 	rule.Name = ""
 	rule.Actions = []model.RuleAction{
-		{ID: "action-z", DelayMS: 500, Type: "event", CEID: "LATE"},
-		{ID: "action-a", DelayMS: 100, Type: "event", CEID: "EARLY"},
+		{ID: "action-z", DelayMS: 500, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"LATE\">"},
+		{ID: "action-a", DelayMS: 100, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"EARLY\">"},
 		{ID: "action-b", DelayMS: 500, Type: "mutate", Target: "ports.LP01", Value: "empty"},
 	}
 
@@ -157,23 +157,19 @@ func TestDuplicateRuleCreatesDistinctRuleAndActionIDs(t *testing.T) {
 	}
 }
 
-func TestSaveAndReloadPreservesStructuredEventReports(t *testing.T) {
+func TestSaveAndReloadPreservesGenericSendActions(t *testing.T) {
 	store, _ := newFileBackedStore(t)
 
 	rule := store.Snapshot().Rules[0]
 	rule.Actions = []model.RuleAction{
 		{
-			ID:      "action-1",
-			DelayMS: 25,
-			Type:    "event",
-			DataID:  "U4:0",
-			CEID:    "U4:1001",
-			Reports: []model.RuleActionReport{
-				{
-					RPTID:  "U4:5001",
-					Values: []string{"L:[U4:1, A:\"LP01\"]"},
-				},
-			},
+			ID:       "action-1",
+			DelayMS:  25,
+			Type:     "send",
+			Stream:   7,
+			Function: 3,
+			WBit:     false,
+			Body:     "L:2 <A \"CUSTOM\"> <I 7>",
 		},
 	}
 	if _, err := store.UpdateRule(rule); err != nil {
@@ -190,14 +186,11 @@ func TestSaveAndReloadPreservesStructuredEventReports(t *testing.T) {
 	}
 
 	savedAction := reloaded.Rules[0].Actions[0]
-	if savedAction.DataID != "U4:0" || savedAction.CEID != "U4:1001" || len(savedAction.Reports) != 1 {
-		t.Fatalf("expected structured event report after reload, got %#v", savedAction)
+	if savedAction.Type != "send" || savedAction.Stream != 7 || savedAction.Function != 3 || savedAction.WBit {
+		t.Fatalf("expected generic send fields after reload, got %#v", savedAction)
 	}
-	if savedAction.Reports[0].RPTID != "U4:5001" || len(savedAction.Reports[0].Values) != 1 {
-		t.Fatalf("expected structured report values after reload, got %#v", savedAction.Reports[0])
-	}
-	if savedAction.Reports[0].Values[0] != "L:[U4:1, A:\"LP01\"]" {
-		t.Fatalf("expected structured V payload after reload, got %#v", savedAction.Reports[0].Values)
+	if savedAction.Body != "L:2 <A \"CUSTOM\"> <I 7>" {
+		t.Fatalf("expected generic body after reload, got %#v", savedAction.Body)
 	}
 }
 
@@ -251,8 +244,11 @@ rules:
       ack: 1
     events:
       - delay_ms: 50
-        type: event
-        ceid: FILE_EVENT
+        type: send
+        stream: 6
+        function: 11
+        wbit: true
+        body: 'L:1 <A "FILE_EVENT">'
 `), 0o644); err != nil {
 		t.Fatalf("overwrite config file: %v", err)
 	}
@@ -430,13 +426,11 @@ rules:
       ack: 0
     events:
       - delay_ms: 10
-        type: event
-        data_id: "U4:0"
-        ceid: "U4:1001"
-        reports:
-          - rptid: "U4:5001"
-            values:
-              - "L:[U4:1, A:\"LP01\"]"
+        type: send
+        stream: 6
+        function: 11
+        wbit: true
+        body: 'L:2 <A "TRANSFER_INITIATED"> <I 7>'
 `), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
@@ -462,18 +456,14 @@ rules:
 	if len(snapshot.Rules[0].Actions) != 1 || snapshot.Rules[0].Actions[0].ID != "action-1" {
 		t.Fatalf("expected file actions to load with generated IDs, got %#v", snapshot.Rules[0].Actions)
 	}
-	if snapshot.Rules[0].Actions[0].DataID != "U4:0" {
-		t.Fatalf("expected file action data_id to load, got %#v", snapshot.Rules[0].Actions[0])
-	}
-	if len(snapshot.Rules[0].Actions[0].Reports) != 1 || snapshot.Rules[0].Actions[0].Reports[0].RPTID != "U4:5001" {
-		t.Fatalf("expected structured event reports from file, got %#v", snapshot.Rules[0].Actions[0])
-	}
-	if len(snapshot.Rules[0].Actions[0].Reports[0].Values) != 1 || snapshot.Rules[0].Actions[0].Reports[0].Values[0] != "L:[U4:1, A:\"LP01\"]" {
-		t.Fatalf("expected structured event values from file, got %#v", snapshot.Rules[0].Actions[0].Reports[0].Values)
+	if action := snapshot.Rules[0].Actions[0]; action.Type != "send" || action.Stream != 6 || action.Function != 11 || !action.WBit {
+		t.Fatalf("expected file action generic send fields to load, got %#v", action)
+	} else if action.Body != "L:2 <A \"TRANSFER_INITIATED\"> <I 7>" {
+		t.Fatalf("expected file action body to load, got %#v", action.Body)
 	}
 }
 
-func TestNewFromFileMapsLegacyVariableEntriesToReportValues(t *testing.T) {
+func TestNewFromFileConvertsLegacyStructuredEventsToGenericSendBody(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy-sim.yaml")
 	if err := os.WriteFile(path, []byte(`
 hsms:
@@ -530,9 +520,12 @@ rules:
 		t.Fatalf("create store from legacy file: %v", err)
 	}
 
-	values := store.Snapshot().Rules[0].Actions[0].Reports[0].Values
-	if len(values) != 1 || values[0] != "A:LP01" {
-		t.Fatalf("expected legacy variables to map into report values, got %#v", values)
+	action := store.Snapshot().Rules[0].Actions[0]
+	if action.Type != "send" || action.Stream != 6 || action.Function != 11 || !action.WBit {
+		t.Fatalf("expected legacy action to map into a generic send action, got %#v", action)
+	}
+	if action.Body != "L:3 <U4 0> <U4 1001> L:1 L:2 <U4 5001> L:1 <A \"LP01\">" {
+		t.Fatalf("expected legacy variables to map into generic SML body, got %#v", action.Body)
 	}
 }
 

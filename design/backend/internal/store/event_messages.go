@@ -10,35 +10,37 @@ import (
 	"secsim/design/backend/internal/model"
 )
 
-func buildScheduledEventMessage(sessionID uint16, messageID string, action scheduledAction, occurredAt time.Time) (hsms.Message, model.MessageRecord, error) {
-	body, label, err := buildEventBody(action.Action)
-	if err != nil {
-		return hsms.Message{}, model.MessageRecord{}, err
+func buildScheduledSendMessage(sessionID uint16, messageID string, action scheduledAction, occurredAt time.Time) (hsms.Message, model.MessageRecord, error) {
+	var body *hsms.Item
+	if strings.TrimSpace(action.Action.Body) != "" {
+		parsed, err := hsms.ParseSMLItem(action.Action.Body)
+		if err != nil {
+			return hsms.Message{}, model.MessageRecord{}, fmt.Errorf("parse action body: %w", err)
+		}
+		body = &parsed
 	}
 
 	message := hsms.Message{
 		SessionID:   sessionID,
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
+		Stream:      byte(action.Action.Stream),
+		Function:    byte(action.Action.Function),
+		WBit:        action.Action.WBit,
 		SystemBytes: 0,
-		Body:        &body,
+		Body:        body,
 	}
-	if label == "" {
-		label = message.Label()
-	}
+
 	record := model.MessageRecord{
 		ID:            messageID,
 		Timestamp:     formatTimestamp(occurredAt),
 		Direction:     "OUT",
-		SF:            "S6F11",
-		Label:         label,
+		SF:            formatSF(action.Action.Stream, action.Action.Function),
+		Label:         message.Label(),
 		MatchedRule:   action.RuleName,
 		MatchedRuleID: action.RuleID,
 		Detail: model.MessageDetail{
-			Stream:   6,
-			Function: 11,
-			WBit:     true,
+			Stream:   action.Action.Stream,
+			Function: action.Action.Function,
+			WBit:     action.Action.WBit,
 			Body:     message.BodySML(),
 			RawSML:   message.RawSML(),
 		},
@@ -48,135 +50,125 @@ func buildScheduledEventMessage(sessionID uint16, messageID string, action sched
 	return message, record, nil
 }
 
-func buildEventBody(action model.RuleAction) (hsms.Item, string, error) {
-	dataIDItem, _, err := parseGeneratorItem(firstNonEmpty(action.DataID, "U4:0"))
-	if err != nil {
-		return hsms.Item{}, "", fmt.Errorf("parse event DATAID %q: %w", action.DataID, err)
-	}
-
-	ceidItem, label, err := parseGeneratorItem(action.CEID)
-	if err != nil {
-		return hsms.Item{}, "", fmt.Errorf("parse event CEID %q: %w", action.CEID, err)
-	}
-
-	reports := make([]hsms.Item, 0, len(action.Reports))
-	for _, report := range action.Reports {
-		rptidItem, _, err := parseGeneratorItem(firstNonEmpty(report.RPTID, "U4:0"))
-		if err != nil {
-			return hsms.Item{}, "", fmt.Errorf("parse event RPTID %q: %w", report.RPTID, err)
-		}
-
-		values := make([]hsms.Item, 0, len(report.Values))
-		for _, value := range report.Values {
-			valueItem, _, err := parseGeneratorItem(value)
-			if err != nil {
-				return hsms.Item{}, "", fmt.Errorf("parse report value %q: %w", value, err)
-			}
-			values = append(values, valueItem)
-		}
-
-		reports = append(reports, hsms.List(
-			rptidItem,
-			hsms.List(values...),
-		))
-	}
-
-	return hsms.List(
-		dataIDItem,
-		ceidItem,
-		hsms.List(reports...),
-	), label, nil
-}
-
-func parseGeneratorItem(raw string) (hsms.Item, string, error) {
+func parseLegacyEventExpression(raw string) (hsms.Item, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return hsms.ASCII(""), "", nil
+		return hsms.ASCII(""), nil
 	}
-	if hasGeneratorPrefix(value, "L:[") {
-		return parseGeneratorList(value)
+	if hasLegacyPrefix(value, "L:[") {
+		return parseLegacyListExpression(value)
 	}
-	return parseGeneratorScalar(value)
+	return parseLegacyScalar(value)
 }
 
-func parseGeneratorScalar(value string) (hsms.Item, string, error) {
+func parseLegacyScalar(value string) (hsms.Item, error) {
 	switch {
-	case hasGeneratorPrefix(value, "A:"):
-		payload, err := parseASCIIValue(value[len("A:"):])
+	case hasLegacyPrefix(value, "A:"):
+		payload, err := parseLegacyASCIIValue(value[len("A:"):])
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.ASCII(payload), payload, nil
-	case hasGeneratorPrefix(value, "U1:"):
-		parsed, err := parseUint(value[len("U1:"):], 8)
+		return hsms.ASCII(payload), nil
+	case hasLegacyPrefix(value, "I:"):
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value[len("I:"):]), 10, 32)
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.U1(uint8(parsed)), strconv.FormatUint(parsed, 10), nil
-	case hasGeneratorPrefix(value, "U2:"):
-		parsed, err := parseUint(value[len("U2:"):], 16)
+		return hsms.I4(int32(parsed)), nil
+	case hasLegacyPrefix(value, "I1:"):
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value[len("I1:"):]), 10, 8)
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.U2(uint16(parsed)), strconv.FormatUint(parsed, 10), nil
-	case hasGeneratorPrefix(value, "U4:"):
-		parsed, err := parseUint(value[len("U4:"):], 32)
+		return hsms.I1(int8(parsed)), nil
+	case hasLegacyPrefix(value, "I2:"):
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value[len("I2:"):]), 10, 16)
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.U4(uint32(parsed)), strconv.FormatUint(parsed, 10), nil
-	case hasGeneratorPrefix(value, "BOOL:"):
+		return hsms.I2(int16(parsed)), nil
+	case hasLegacyPrefix(value, "I4:"):
+		parsed, err := strconv.ParseInt(strings.TrimSpace(value[len("I4:"):]), 10, 32)
+		if err != nil {
+			return hsms.Item{}, err
+		}
+		return hsms.I4(int32(parsed)), nil
+	case hasLegacyPrefix(value, "U:"):
+		parsed, err := parseLegacyUint(value[len("U:"):], 32)
+		if err != nil {
+			return hsms.Item{}, err
+		}
+		return hsms.U4(uint32(parsed)), nil
+	case hasLegacyPrefix(value, "U1:"):
+		parsed, err := parseLegacyUint(value[len("U1:"):], 8)
+		if err != nil {
+			return hsms.Item{}, err
+		}
+		return hsms.U1(uint8(parsed)), nil
+	case hasLegacyPrefix(value, "U2:"):
+		parsed, err := parseLegacyUint(value[len("U2:"):], 16)
+		if err != nil {
+			return hsms.Item{}, err
+		}
+		return hsms.U2(uint16(parsed)), nil
+	case hasLegacyPrefix(value, "U4:"):
+		parsed, err := parseLegacyUint(value[len("U4:"):], 32)
+		if err != nil {
+			return hsms.Item{}, err
+		}
+		return hsms.U4(uint32(parsed)), nil
+	case hasLegacyPrefix(value, "BOOL:"):
 		parsed, err := strconv.ParseBool(strings.TrimSpace(value[len("BOOL:"):]))
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.Boolean(parsed), strconv.FormatBool(parsed), nil
-	case hasGeneratorPrefix(value, "B:"):
+		return hsms.Boolean(parsed), nil
+	case hasLegacyPrefix(value, "B:"):
 		parsed, err := parseBinaryBytes(value[len("B:"):])
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
-		return hsms.Binary(parsed...), strings.TrimSpace(value[len("B:"):]), nil
+		return hsms.Binary(parsed...), nil
 	default:
-		if parsed, err := strconv.ParseUint(value, 10, 32); err == nil {
-			return hsms.U4(uint32(parsed)), strconv.FormatUint(parsed, 10), nil
+		if parsed, err := strconv.ParseInt(value, 10, 32); err == nil {
+			return hsms.I4(int32(parsed)), nil
 		}
-		return hsms.ASCII(value), value, nil
+		return hsms.ASCII(value), nil
 	}
 }
 
-func parseGeneratorList(value string) (hsms.Item, string, error) {
+func parseLegacyListExpression(value string) (hsms.Item, error) {
 	if !strings.HasSuffix(value, "]") {
-		return hsms.Item{}, "", fmt.Errorf("list item must end with ]")
+		return hsms.Item{}, fmt.Errorf("list item must end with ]")
 	}
 
 	inner := strings.TrimSpace(value[len("L:[") : len(value)-1])
 	if inner == "" {
-		return hsms.List(), "", nil
+		return hsms.List(), nil
 	}
 
 	parts, err := splitTopLevelListItems(inner)
 	if err != nil {
-		return hsms.Item{}, "", err
+		return hsms.Item{}, err
 	}
 
 	children := make([]hsms.Item, 0, len(parts))
 	for _, part := range parts {
-		child, _, err := parseGeneratorItem(part)
+		child, err := parseLegacyEventExpression(part)
 		if err != nil {
-			return hsms.Item{}, "", err
+			return hsms.Item{}, err
 		}
 		children = append(children, child)
 	}
 
-	return hsms.List(children...), "", nil
+	return hsms.List(children...), nil
 }
 
-func hasGeneratorPrefix(value string, prefix string) bool {
+func hasLegacyPrefix(value string, prefix string) bool {
 	return len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix)
 }
 
-func parseASCIIValue(raw string) (string, error) {
+func parseLegacyASCIIValue(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
 		unquoted, err := strconv.Unquote(value)
@@ -189,7 +181,7 @@ func parseASCIIValue(raw string) (string, error) {
 	return value, nil
 }
 
-func parseUint(raw string, bits int) (uint64, error) {
+func parseLegacyUint(raw string, bits int) (uint64, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return 0, fmt.Errorf("empty numeric value")

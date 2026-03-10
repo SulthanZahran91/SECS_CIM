@@ -9,15 +9,11 @@ describe("ruleToYaml", () => {
       {
         id: "action-1",
         delayMs: 300,
-        type: "event",
-        dataId: "U4:0",
-        ceid: "TRANSFER_INITIATED",
-        reports: [
-          {
-            rptid: "5001",
-            values: ['L:[U4:1, A:"LP01"]'],
-          },
-        ],
+        type: "send",
+        stream: 6,
+        function: 11,
+        wbit: true,
+        body: 'L:2 <A "TRANSFER_INITIATED"> <I 7>',
       },
       { id: "action-2", delayMs: 1200, type: "mutate", target: "ports.LP01", value: "empty" },
     ];
@@ -27,11 +23,10 @@ describe("ruleToYaml", () => {
     expect(yaml).toContain('- name: "accept transfer"');
     expect(yaml).toContain('    rcmd: "TRANSFER"');
     expect(yaml).toContain('    - field: "carrier_exists"');
-    expect(yaml).toContain('      data_id: "U4:0"');
-    expect(yaml).toContain('      ceid: "TRANSFER_INITIATED"');
-    expect(yaml).toContain('      reports:');
-    expect(yaml).toContain('        - rptid: "5001"');
-    expect(yaml).toContain('            - "L:[U4:1, A:\\"LP01\\"]"');
+    expect(yaml).toContain("      stream: 6");
+    expect(yaml).toContain("      function: 11");
+    expect(yaml).toContain("      wbit: true");
+    expect(yaml).toContain('      body: "L:2 <A \\"TRANSFER_INITIATED\\"> <I 7>"');
     expect(yaml).toContain('      target: "ports.LP01"');
     expect(yaml).toContain('      value: "empty"');
   });

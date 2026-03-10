@@ -53,7 +53,7 @@ const baseSnapshot: Snapshot = {
       match: { stream: 2, function: 41, rcmd: "TRANSFER" },
       conditions: [{ field: "carrier_exists", value: "CARR001" }],
       reply: { stream: 2, function: 42, ack: 0 },
-      actions: [{ id: "action-1", delayMs: 300, type: "event", dataId: "U4:0", ceid: "TRANSFER_INITIATED", reports: [] }],
+      actions: [{ id: "action-1", delayMs: 300, type: "send", stream: 6, function: 11, wbit: true, body: 'L:1 <A "TRANSFER_INITIATED">' }],
     },
     {
       id: "rule-2",

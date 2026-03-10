@@ -27,21 +27,17 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	rule := state.ConfigSnapshot().Rules[0]
 	rule.Actions = []model.RuleAction{
 		{
-			ID:      "action-1",
-			DelayMS: 20,
-			Type:    "event",
-			DataID:  "U4:0",
-			CEID:    "U4:1001",
-			Reports: []model.RuleActionReport{
-				{
-					RPTID:  "U4:5001",
-					Values: []string{"L:[U4:1, A:\"LP01\"]"},
-				},
-			},
+			ID:       "action-1",
+			DelayMS:  20,
+			Type:     "send",
+			Stream:   6,
+			Function: 11,
+			WBit:     true,
+			Body:     "L:2 <A \"TRANSFER_INITIATED\"> <I 7>",
 		},
 		{ID: "action-2", DelayMS: 40, Type: "mutate", Target: "carriers.CARR001.location", Value: "SHELF_A01"},
 		{ID: "action-3", DelayMS: 40, Type: "mutate", Target: "ports.LP01", Value: "empty"},
-		{ID: "action-4", DelayMS: 40, Type: "event", CEID: "TRANSFER_COMPLETED"},
+		{ID: "action-4", DelayMS: 40, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_COMPLETED\">"},
 	}
 	if _, err := state.UpdateRule(rule); err != nil {
 		t.Fatalf("update rule timings: %v", err)
@@ -111,20 +107,14 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	if firstEvent.Stream != 6 || firstEvent.Function != 11 {
 		t.Fatalf("expected S6F11 event, got %#v", firstEvent)
 	}
-	if ceid, ok := hsms.ExtractS6F11CEID(firstEvent); !ok || ceid != "1001" {
-		t.Fatalf("expected structured CEID 1001 event body, got %#v", firstEvent)
+	if firstEvent.Body == nil || firstEvent.Body.Type != hsms.ItemList || len(firstEvent.Body.Children) != 2 {
+		t.Fatalf("expected generic outbound SML body, got %#v", firstEvent.Body)
 	}
-	if firstEvent.Body == nil || len(firstEvent.Body.Children) != 3 {
-		t.Fatalf("expected structured S6F11 body, got %#v", firstEvent.Body)
+	if got := firstEvent.Body.Children[0].ScalarValue(); got != "TRANSFER_INITIATED" {
+		t.Fatalf("expected first generic item TRANSFER_INITIATED, got %q", got)
 	}
-	if got := firstEvent.Body.Children[2].Children[0].Children[0].ScalarValue(); got != "5001" {
-		t.Fatalf("expected structured RPTID 5001, got %q", got)
-	}
-	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].Children[0].ScalarValue(); got != "1" {
-		t.Fatalf("expected first nested V item value 1, got %q", got)
-	}
-	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].Children[1].ScalarValue(); got != "LP01" {
-		t.Fatalf("expected second nested V item value LP01, got %q", got)
+	if got := firstEvent.Body.Children[1].ScalarValue(); got != "7" {
+		t.Fatalf("expected second generic item 7, got %q", got)
 	}
 
 	secondEvent := readMessage(t, conn)

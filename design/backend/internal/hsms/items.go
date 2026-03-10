@@ -12,6 +12,9 @@ const (
 	formatBinary  byte = 0x20
 	formatBoolean byte = 0x24
 	formatASCII   byte = 0x40
+	formatI1      byte = 0x64
+	formatI2      byte = 0x68
+	formatI4      byte = 0x70
 	formatU1      byte = 0xA4
 	formatU2      byte = 0xA8
 	formatU4      byte = 0xB0
@@ -24,6 +27,9 @@ const (
 	ItemBinary
 	ItemBoolean
 	ItemASCII
+	ItemI1
+	ItemI2
+	ItemI4
 	ItemU1
 	ItemU2
 	ItemU4
@@ -35,6 +41,9 @@ type Item struct {
 	Bytes    []byte
 	Bool     bool
 	Text     string
+	Int8     int8
+	Int16    int16
+	Int32    int32
 	Uint8    uint8
 	Uint16   uint16
 	Uint32   uint32
@@ -54,6 +63,18 @@ func Boolean(value bool) Item {
 
 func ASCII(value string) Item {
 	return Item{Type: ItemASCII, Text: value}
+}
+
+func I1(value int8) Item {
+	return Item{Type: ItemI1, Int8: value}
+}
+
+func I2(value int16) Item {
+	return Item{Type: ItemI2, Int16: value}
+}
+
+func I4(value int32) Item {
+	return Item{Type: ItemI4, Int32: value}
 }
 
 func U1(value uint8) Item {
@@ -116,6 +137,21 @@ func DecodeItem(data []byte) (Item, int, error) {
 			return Item{}, 0, fmt.Errorf("ASCII item truncated")
 		}
 		return ASCII(string(data[offset : offset+length])), offset + length, nil
+	case formatI1:
+		if len(data) < offset+length || length != 1 {
+			return Item{}, 0, fmt.Errorf("unsupported I1 item length %d", length)
+		}
+		return I1(int8(data[offset])), offset + length, nil
+	case formatI2:
+		if len(data) < offset+length || length != 2 {
+			return Item{}, 0, fmt.Errorf("unsupported I2 item length %d", length)
+		}
+		return I2(int16(binary.BigEndian.Uint16(data[offset : offset+length]))), offset + length, nil
+	case formatI4:
+		if len(data) < offset+length || length != 4 {
+			return Item{}, 0, fmt.Errorf("unsupported I4 item length %d", length)
+		}
+		return I4(int32(binary.BigEndian.Uint32(data[offset : offset+length]))), offset + length, nil
 	case formatU1:
 		if len(data) < offset+length || length != 1 {
 			return Item{}, 0, fmt.Errorf("unsupported U1 item length %d", length)
@@ -159,6 +195,16 @@ func EncodeItem(item Item) ([]byte, error) {
 	case ItemASCII:
 		payload := []byte(item.Text)
 		return append(encodeHeader(formatASCII, len(payload)), payload...), nil
+	case ItemI1:
+		return append(encodeHeader(formatI1, 1), byte(item.Int8)), nil
+	case ItemI2:
+		payload := make([]byte, 2)
+		binary.BigEndian.PutUint16(payload, uint16(item.Int16))
+		return append(encodeHeader(formatI2, len(payload)), payload...), nil
+	case ItemI4:
+		payload := make([]byte, 4)
+		binary.BigEndian.PutUint32(payload, uint32(item.Int32))
+		return append(encodeHeader(formatI4, len(payload)), payload...), nil
 	case ItemU1:
 		return append(encodeHeader(formatU1, 1), item.Uint8), nil
 	case ItemU2:
@@ -206,6 +252,12 @@ func (item Item) Compact() string {
 		return "<BOOLEAN FALSE>"
 	case ItemASCII:
 		return fmt.Sprintf("<A %q>", item.Text)
+	case ItemI1:
+		return fmt.Sprintf("<I1 %d>", item.Int8)
+	case ItemI2:
+		return fmt.Sprintf("<I2 %d>", item.Int16)
+	case ItemI4:
+		return fmt.Sprintf("<I4 %d>", item.Int32)
 	case ItemU1:
 		return fmt.Sprintf("<U1 %d>", item.Uint8)
 	case ItemU2:
@@ -221,6 +273,12 @@ func (item Item) ScalarValue() string {
 	switch item.Type {
 	case ItemASCII:
 		return item.Text
+	case ItemI1:
+		return strconv.Itoa(int(item.Int8))
+	case ItemI2:
+		return strconv.Itoa(int(item.Int16))
+	case ItemI4:
+		return strconv.FormatInt(int64(item.Int32), 10)
 	case ItemU1:
 		return strconv.Itoa(int(item.Uint8))
 	case ItemU2:
@@ -261,6 +319,12 @@ func writePrettyItem(builder *strings.Builder, item Item, depth int) {
 	case ItemBoolean:
 		builder.WriteString(item.Compact())
 	case ItemASCII:
+		builder.WriteString(item.Compact())
+	case ItemI1:
+		builder.WriteString(item.Compact())
+	case ItemI2:
+		builder.WriteString(item.Compact())
+	case ItemI4:
 		builder.WriteString(item.Compact())
 	case ItemU1:
 		builder.WriteString(item.Compact())

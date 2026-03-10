@@ -88,17 +88,13 @@ export interface RuleReply {
 export interface RuleAction {
   id: string;
   delayMs: number;
-  type: "event" | "mutate";
-  dataId?: string;
-  ceid?: string;
-  reports?: RuleActionReport[];
+  type: "send" | "mutate";
+  stream?: number;
+  function?: number;
+  wbit?: boolean;
+  body?: string;
   target?: string;
   value?: string;
-}
-
-export interface RuleActionReport {
-  rptid: string;
-  values: string[];
 }
 
 export interface MessageRecord {

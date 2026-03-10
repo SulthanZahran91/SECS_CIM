@@ -26,24 +26,11 @@ export function ruleToYaml(rule: Rule): string {
               "    - delay_ms: " + action.delayMs,
               "      type: " + quote(action.type),
             ];
-            if (action.type === "event") {
-              lines.push("      data_id: " + quote(action.dataId ?? "U4:0"));
-              lines.push("      ceid: " + quote(action.ceid ?? ""));
-              if ((action.reports?.length ?? 0) > 0) {
-                lines.push("      reports:");
-                for (const report of action.reports ?? []) {
-                  lines.push("        - rptid: " + quote(report.rptid ?? ""));
-                  if (report.values.length === 0) {
-                    lines.push("          values: []");
-                    continue;
-                  }
-
-                  lines.push("          values:");
-                  for (const value of report.values) {
-                    lines.push("            - " + quote(value ?? ""));
-                  }
-                }
-              }
+            if (action.type === "send") {
+              lines.push("      stream: " + (action.stream ?? 0));
+              lines.push("      function: " + (action.function ?? 0));
+              lines.push("      wbit: " + Boolean(action.wbit));
+              lines.push("      body: " + quote(action.body ?? ""));
             } else {
               lines.push("      target: " + quote(action.target ?? ""));
               lines.push("      value: " + quote(action.value ?? ""));

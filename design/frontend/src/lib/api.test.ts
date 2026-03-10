@@ -67,23 +67,11 @@ describe("api client", () => {
   });
 
   it("normalizes null collections in snapshot responses", async () => {
-    const rule = makeSnapshot().rules[0];
-    rule.actions = [
-      {
-        ...rule.actions[0],
-        reports: [
-          {
-            rptid: "5001",
-            values: null as never,
-          },
-        ],
-      },
-    ];
     const malformed = {
       ...makeSnapshot(),
       rules: [
         {
-          ...rule,
+          ...makeSnapshot().rules[0],
           conditions: null,
         },
         {
@@ -104,8 +92,34 @@ describe("api client", () => {
     const result = await api.bootstrap();
 
     expect(result.rules[0].conditions).toEqual([]);
-    expect(result.rules[0].actions[0].reports?.[0].values).toEqual([]);
     expect(result.rules[1].actions).toEqual([]);
     expect(result.messages).toEqual([]);
+  });
+
+  it("normalizes legacy event action types in snapshot responses", async () => {
+    const malformed = {
+      ...makeSnapshot(),
+      rules: [
+        {
+          ...makeSnapshot().rules[0],
+          actions: [
+            {
+              ...makeSnapshot().rules[0].actions[0],
+              type: "event",
+            },
+          ],
+        },
+      ],
+    };
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(malformed), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await api.bootstrap();
+
+    expect(result.rules[0].actions[0].type).toBe("send");
   });
 });

@@ -231,8 +231,8 @@ func TestRuleLifecycleEndpoints(t *testing.T) {
 
 	newRule.Name = ""
 	newRule.Actions = []model.RuleAction{
-		{ID: "action-z", DelayMS: 800, Type: "event", CEID: "LATE"},
-		{ID: "action-a", DelayMS: 100, Type: "event", CEID: "EARLY"},
+		{ID: "action-z", DelayMS: 800, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"LATE\">"},
+		{ID: "action-a", DelayMS: 100, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"EARLY\">"},
 	}
 	updateRecorder := doRequest(t, mux, http.MethodPut, "/api/rules/"+newRule.ID, newRule)
 	if updateRecorder.Code != http.StatusOK {

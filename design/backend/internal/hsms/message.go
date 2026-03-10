@@ -163,7 +163,12 @@ func ExtractS6F11CEID(message Message) (string, bool) {
 	if ceid, ok := ExtractSingleASCII(message); ok {
 		return ceid, true
 	}
-	if message.Body == nil || message.Body.Type != ItemList || len(message.Body.Children) < 2 {
+	if message.Body == nil || message.Body.Type != ItemList || len(message.Body.Children) != 3 {
+		return "", false
+	}
+
+	reports := message.Body.Children[2]
+	if reports.Type != ItemList {
 		return "", false
 	}
 
