@@ -1,8 +1,11 @@
 package sim
 
 import (
+	"bytes"
+	"log"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,6 +126,8 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 }
 
 func TestControllerPassiveHSMSSessionHandlesControlMessages(t *testing.T) {
+	traceOutput := captureLogs(t)
+
 	state := store.New()
 	state.ClearLog()
 
@@ -193,9 +198,19 @@ func TestControllerPassiveHSMSSessionHandlesControlMessages(t *testing.T) {
 	waitFor(t, time.Second, func() bool {
 		return state.Snapshot().Runtime.HSMSState == "LISTENING"
 	})
+
+	assertLogContains(t, traceOutput, "HSMS tcp accepted")
+	assertLogContains(t, traceOutput, "HSMS control IN Select.req")
+	assertLogContains(t, traceOutput, "HSMS control OUT Select.rsp")
+	assertLogContains(t, traceOutput, "HSMS control IN Linktest.req")
+	assertLogContains(t, traceOutput, "HSMS control OUT Linktest.rsp")
+	assertLogContains(t, traceOutput, "HSMS control IN Separate.req")
+	assertLogContains(t, traceOutput, "HSMS tcp closed")
 }
 
 func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
+	traceOutput := captureLogs(t)
+
 	state := store.New()
 	state.ClearLog()
 
@@ -261,6 +276,10 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 		snapshot := state.Snapshot()
 		return snapshot.Runtime.HSMSState == "SELECTED" && snapshot.Runtime.LastError == ""
 	})
+
+	assertLogContains(t, traceOutput, "HSMS tcp connected")
+	assertLogContains(t, traceOutput, "HSMS control OUT Select.req")
+	assertLogContains(t, traceOutput, "HSMS control IN Select.rsp")
 }
 
 func TestControllerRestartClearsPendingConnectionChanges(t *testing.T) {
@@ -406,4 +425,28 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 
 func itemPtr(item hsms.Item) *hsms.Item {
 	return &item
+}
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	originalWriter := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&buffer)
+	log.SetFlags(0)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+		log.SetFlags(originalFlags)
+	})
+
+	return &buffer
+}
+
+func assertLogContains(t *testing.T, buffer *bytes.Buffer, pattern string) {
+	t.Helper()
+
+	if !strings.Contains(buffer.String(), pattern) {
+		t.Fatalf("expected logs to contain %q, got:\n%s", pattern, buffer.String())
+	}
 }

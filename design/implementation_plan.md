@@ -14,6 +14,7 @@ Current reality:
 - Real HSMS transport now exists, and a minimal SECS-II codec/message pipeline is wired into the live runtime.
 - The live UI now surfaces transport/runtime failures and supports paused vs. auto-tail monitor behavior during sustained sessions.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
+- HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 
 The design references remain:
@@ -135,6 +136,7 @@ Done:
 - Session state changes now update the shared runtime snapshot so the status bar reflects actual transport state
 - The runtime now applies configured address, port, session ID, and basic T5/T6/T7/T8 timer behavior
 - `T8` enforcement now applies to inter-byte stalls within a frame instead of idle time between frames, which keeps selected sessions up against quieter hosts
+- The backend now emits trace logs for TCP session lifecycle and HSMS control frames so external host handshake issues can be diagnosed from runtime logs
 
 Remaining:
 

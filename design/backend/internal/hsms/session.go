@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -115,6 +116,7 @@ func (m *Manager) acceptLoop(ctx context.Context, listener net.Listener) {
 			continue
 		}
 
+		traceTCPEvent("accepted", conn)
 		activeSession := newSession(conn)
 		m.setCurrentSession(activeSession)
 		m.publishState("CONNECTED")
@@ -143,6 +145,7 @@ func (m *Manager) activeLoop(ctx context.Context) {
 			continue
 		}
 
+		traceTCPEvent("connected", conn)
 		activeSession := newSession(conn)
 		m.setCurrentSession(activeSession)
 		m.publishState("CONNECTED")
@@ -195,6 +198,7 @@ func (m *Manager) runSession(ctx context.Context, session *session, active bool)
 		}
 
 		if frame.SType != STypeData {
+			traceControlFrame("IN", session.conn, frame)
 			if err := m.handleControlFrame(session, frame, active); err != nil {
 				if ctx.Err() == nil && m.handlers.OnError != nil {
 					m.handlers.OnError(err)
@@ -419,12 +423,14 @@ func (s *session) send(frame *Frame) error {
 	case <-s.done:
 		return net.ErrClosed
 	case s.writeCh <- frame:
+		traceControlFrame("OUT", s.conn, frame)
 		return nil
 	}
 }
 
 func (s *session) close() {
 	s.closeOnce.Do(func() {
+		traceTCPEvent("closed", s.conn)
 		close(s.done)
 		_ = s.conn.Close()
 	})
@@ -440,4 +446,65 @@ func (s *session) isSelected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.selected
+}
+
+func traceTCPEvent(event string, conn net.Conn) {
+	if conn == nil {
+		return
+	}
+
+	log.Printf("HSMS tcp %s local=%s remote=%s", event, formatAddr(conn.LocalAddr()), formatAddr(conn.RemoteAddr()))
+}
+
+func traceControlFrame(direction string, conn net.Conn, frame *Frame) {
+	if conn == nil || frame == nil || frame.SType == STypeData {
+		return
+	}
+
+	message := fmt.Sprintf(
+		"HSMS control %s %s sys=0x%08x local=%s remote=%s",
+		direction,
+		controlFrameName(frame),
+		frame.SystemBytes,
+		formatAddr(conn.LocalAddr()),
+		formatAddr(conn.RemoteAddr()),
+	)
+	if frame.SType == STypeSelectRsp {
+		message = fmt.Sprintf("%s status=%d", message, frame.ControlCode)
+	}
+	log.Print(message)
+}
+
+func controlFrameName(frame *Frame) string {
+	if frame == nil {
+		return "unknown"
+	}
+
+	switch frame.SType {
+	case STypeSelectReq:
+		return "Select.req"
+	case STypeSelectRsp:
+		return "Select.rsp"
+	case STypeDeselectReq:
+		return "Deselect.req"
+	case STypeDeselectRsp:
+		return "Deselect.rsp"
+	case STypeLinktestReq:
+		return "Linktest.req"
+	case STypeLinktestRsp:
+		return "Linktest.rsp"
+	case STypeRejectReq:
+		return "Reject.req"
+	case STypeSeparateReq:
+		return "Separate.req"
+	default:
+		return fmt.Sprintf("SType(%d)", frame.SType)
+	}
+}
+
+func formatAddr(addr net.Addr) string {
+	if addr == nil {
+		return "unknown"
+	}
+	return addr.String()
 }
