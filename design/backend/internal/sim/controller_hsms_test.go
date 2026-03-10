@@ -122,6 +122,147 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	}
 }
 
+func TestControllerPassiveHSMSSessionHandlesControlMessages(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "passive"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = freePort(t)
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "LISTENING" {
+		t.Fatalf("expected passive controller to enter LISTENING, got %#v", started.Runtime)
+	}
+
+	conn := dialEventually(t, hsmsConfig.Port)
+	defer conn.Close()
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01010101, hsms.STypeSelectReq, 0)); err != nil {
+		t.Fatalf("write initial select.req: %v", err)
+	}
+	selectRsp := readFrame(t, conn)
+	if selectRsp.SType != hsms.STypeSelectRsp || selectRsp.ControlCode != hsms.SelectStatusSuccess {
+		t.Fatalf("unexpected initial select response: %#v", selectRsp)
+	}
+	waitFor(t, 500*time.Millisecond, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "SELECTED"
+	})
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01010102, hsms.STypeLinktestReq, 0)); err != nil {
+		t.Fatalf("write linktest.req: %v", err)
+	}
+	linktestRsp := readFrame(t, conn)
+	if linktestRsp.SType != hsms.STypeLinktestRsp {
+		t.Fatalf("expected linktest.rsp, got %#v", linktestRsp)
+	}
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01010103, hsms.STypeDeselectReq, 0)); err != nil {
+		t.Fatalf("write deselect.req: %v", err)
+	}
+	deselectRsp := readFrame(t, conn)
+	if deselectRsp.SType != hsms.STypeDeselectRsp {
+		t.Fatalf("expected deselect.rsp, got %#v", deselectRsp)
+	}
+	waitFor(t, 500*time.Millisecond, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "CONNECTED"
+	})
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01010104, hsms.STypeSelectReq, 0)); err != nil {
+		t.Fatalf("write second select.req: %v", err)
+	}
+	secondSelectRsp := readFrame(t, conn)
+	if secondSelectRsp.SType != hsms.STypeSelectRsp || secondSelectRsp.ControlCode != hsms.SelectStatusSuccess {
+		t.Fatalf("unexpected second select response: %#v", secondSelectRsp)
+	}
+	waitFor(t, 500*time.Millisecond, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "SELECTED"
+	})
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01010105, hsms.STypeSeparateReq, 0)); err != nil {
+		t.Fatalf("write separate.req: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "LISTENING"
+	})
+}
+
+func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hostListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for active host: %v", err)
+	}
+	defer hostListener.Close()
+
+	hostPort := hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "active"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = hostPort
+	hsmsConfig.Timers.T5 = 1
+	hsmsConfig.Timers.T6 = 1
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "CONNECTING" {
+		t.Fatalf("expected active controller to start CONNECTING, got %#v", started.Runtime)
+	}
+
+	firstConn := acceptEventually(t, hostListener)
+	firstSelectReq := readFrame(t, firstConn)
+	if firstSelectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected active select.req, got %#v", firstSelectReq)
+	}
+	if err := hsms.WriteFrame(firstConn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), firstSelectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write first select.rsp: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "SELECTED"
+	})
+
+	if err := firstConn.Close(); err != nil {
+		t.Fatalf("close first host connection: %v", err)
+	}
+
+	waitFor(t, time.Second, func() bool {
+		snapshot := state.Snapshot()
+		return snapshot.Runtime.HSMSState == "CONNECTING" && snapshot.Runtime.LastError != ""
+	})
+
+	secondConn := acceptEventually(t, hostListener)
+	defer secondConn.Close()
+
+	secondSelectReq := readFrame(t, secondConn)
+	if secondSelectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected reconnect select.req, got %#v", secondSelectReq)
+	}
+	if err := hsms.WriteFrame(secondConn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), secondSelectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write second select.rsp: %v", err)
+	}
+
+	waitFor(t, 2*time.Second, func() bool {
+		snapshot := state.Snapshot()
+		return snapshot.Runtime.HSMSState == "SELECTED" && snapshot.Runtime.LastError == ""
+	})
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 
@@ -148,6 +289,24 @@ func dialEventually(t *testing.T, port int) net.Conn {
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
+}
+
+func acceptEventually(t *testing.T, listener net.Listener) net.Conn {
+	t.Helper()
+
+	tcpListener, ok := listener.(*net.TCPListener)
+	if !ok {
+		t.Fatal("listener is not a TCP listener")
+	}
+
+	if err := tcpListener.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatalf("set accept deadline: %v", err)
+	}
+	conn, err := tcpListener.Accept()
+	if err != nil {
+		t.Fatalf("accept active connection: %v", err)
+	}
+	return conn
 }
 
 func writeMessage(t *testing.T, conn net.Conn, message hsms.Message) {

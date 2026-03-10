@@ -134,6 +134,12 @@ textarea {
   font-size: 13px;
 }
 
+.monitor-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .toolbar-actions,
 .button-row,
 .detail-summary,
@@ -221,6 +227,11 @@ textarea {
 .banner.notice {
   background: rgba(148, 226, 213, 0.1);
   color: var(--teal);
+}
+
+.banner.warning {
+  background: rgba(249, 226, 175, 0.12);
+  color: var(--yellow);
 }
 
 .main-split {
@@ -645,6 +656,12 @@ textarea {
   min-height: 0;
 }
 
+.message-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
 .message-header,
 .message-row {
   display: grid;
@@ -677,6 +694,31 @@ textarea {
 
 .message-row:hover {
   background: rgba(42, 42, 61, 0.5);
+}
+
+.tail-indicator {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.tail-button {
+  pointer-events: auto;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(108, 108, 255, 0.35);
+  background: rgba(30, 30, 46, 0.92);
+  box-shadow: var(--shadow);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.tail-button:hover {
+  background: rgba(42, 42, 61, 0.98);
+  border-color: var(--accent);
 }
 
 .message-row.selected {

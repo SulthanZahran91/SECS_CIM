@@ -12,6 +12,7 @@ Current reality:
 - The UI shell, API surface, tests, and packaging flow exist.
 - File-backed config persistence, backend rule/runtime execution, and live frontend runtime subscriptions now exist.
 - Real HSMS transport now exists, and a minimal SECS-II codec/message pipeline is wired into the live runtime.
+- The live UI now surfaces transport/runtime failures and supports paused vs. auto-tail monitor behavior during sustained sessions.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 
 The design references remain:
@@ -35,8 +36,8 @@ The design references remain:
 | 2. Rule Engine + State Mutations | Completed | Decoded inbound runtime messages can match rules, emit replies/events, mutate live state, and stream live snapshots to the UI |
 | 3. HSMS Transport | Completed | Real passive/active HSMS runtime now starts, stops, tracks session state, and handles core control traffic |
 | 4. SECS-II Codec + Message Pipeline | Completed | Frames and a minimal supported SECS-II item set are encoded/decoded, logged, auto-responded, and fed into the rule engine |
-| 5. Live UI Integration | Partial | UI now reflects real HSMS session traffic, but runtime-error surfacing and monitor polish are still incomplete |
-| 6. Packaging + Acceptance | Partial | Air-gapped packaging exists, but only for the scaffolded runtime |
+| 5. Live UI Integration | Completed | UI now reflects live HSMS traffic, surfaces transport/update failures, and supports paused/auto-tail monitor behavior |
+| 6. Packaging + Acceptance | Partial | Air-gapped packaging exists and protocol acceptance coverage now exercises the real runtime, but packaged Windows validation is still pending |
 
 ## Completed Work
 
@@ -176,7 +177,7 @@ Exit criteria:
 
 ### Phase 5. Live UI Integration
 
-Status: `Partial`
+Status: `Completed`
 
 Done:
 
@@ -184,11 +185,13 @@ Done:
 - Message detail pane, matched-rule view, and status bar exist
 - Frontend bootstrap and runtime views now follow live backend snapshot updates over the event stream
 - The live monitor now updates from real HSMS session traffic, including protocol auto-responses, rule replies, and scheduled events
+- Runtime transport failures from the backend are now surfaced directly in the UI and toolbar state
+- Live-update stream disconnects now surface as reconnecting warnings in the UI
+- The message monitor now supports paused vs. live-tail behavior, plus a jump-to-latest affordance for sustained traffic
 
 Remaining:
 
-- Surface runtime errors and connection loss clearly
-- Add monitor auto-scroll behavior and other sustained-traffic polish against live sessions
+- None for the current Phase 5 exit criteria
 
 Exit criteria:
 
@@ -204,11 +207,11 @@ Done:
 - Built frontend can be served by the backend
 - The Windows package now includes a default `stocker-sim.yaml` config next to `secsim.exe`
 - A small HSMS smoke-test client now exists at `design/backend/cmd/hsmsprobe` for manual protocol validation against a running simulator
+- Protocol acceptance tests now cover passive-mode control-message handling plus active-mode disconnect/reconnect behavior against the real runtime
 
 Remaining:
 
 - Package sample scenarios or golden test fixtures
-- Add end-to-end acceptance tests for a live protocol session
 - Validate packaged behavior on a clean Windows host
 - Confirm offline rebuild workflow on a dependency-prepared machine
 
@@ -220,18 +223,17 @@ Exit criteria:
 
 The biggest missing pieces are:
 
-1. Broader SECS-II/message coverage beyond the current handshake, remote-command, loopback, and event paths
-2. Clear UI surfacing for transport errors, disconnects, and sustained-traffic behavior
-3. More protocol-level acceptance coverage for active mode, reconnects, and additional control/data edge cases
-4. Packaged Windows validation and offline rebuild confirmation for the real protocol runtime
+1. Broader SECS-II/message coverage beyond the current handshake, control, remote-command, loopback, and event paths
+2. Sample scenario or golden-fixture coverage for broader host workflows
+3. Packaged Windows validation and offline rebuild confirmation for the real protocol runtime
 
 ## Recommended Next Step
 
 Expand coverage around the real protocol runtime:
 
 1. Add the next set of SECS-II message/body shapes needed for the target host scenarios
-2. Add protocol acceptance tests for active-mode connect/select, disconnect/reconnect, and control-message edge cases
-3. Surface runtime transport failures more explicitly in the UI and status area
-4. Validate the packaged Windows build against a clean-host live-session smoke test
+2. Add sample scenarios or golden transcripts for those host flows so packaged builds can be smoke-tested consistently
+3. Validate the packaged Windows build against a clean-host live-session smoke test
+4. Confirm the documented offline rebuild workflow on a dependency-prepared machine
 
 That moves the repo from “real transport exists” to “real transport is scenario-complete and release-validated.”

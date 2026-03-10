@@ -1,4 +1,5 @@
 import type { RuntimeState, HsmsConfig } from "../types";
+import { Badge } from "./ui";
 
 interface ToolbarProps {
   runtime: RuntimeState;
@@ -9,14 +10,17 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ runtime, hsms, onToggleRuntime, onReload, onSave }: ToolbarProps) {
-  const statusLabel = runtime.listening ? "LISTENING" : "STOPPED";
+  const statusLabel = runtime.listening ? runtime.hsmsState : "STOPPED";
+  const statusTone = runtime.lastError ? "blocked" : runtime.hsmsState === "SELECTED" ? "green" : runtime.listening ? "occupied" : "neutral";
+  const statusTextClass = runtime.lastError ? "text-red" : runtime.hsmsState === "SELECTED" ? "green" : "";
 
   return (
     <header className="toolbar">
       <div className="toolbar-brand">◆ SECSIM</div>
       <div className="toolbar-status">
-        <span className={`status-dot ${runtime.listening ? "green" : "neutral"}`} />
-        <span className={`status-text ${runtime.listening ? "green" : ""}`}>{statusLabel}</span>
+        <span className={`status-dot ${statusTone}`} />
+        <span className={`status-text ${statusTextClass}`}>{statusLabel}</span>
+        {runtime.lastError ? <Badge tone="red">Transport issue</Badge> : null}
         <span className="toolbar-summary">
           {hsms.mode} · {hsms.ip}:{hsms.port}
         </span>
@@ -39,4 +43,3 @@ export function Toolbar({ runtime, hsms, onToggleRuntime, onReload, onSave }: To
     </header>
   );
 }
-

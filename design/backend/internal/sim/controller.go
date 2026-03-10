@@ -3,7 +3,9 @@ package sim
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +29,7 @@ type Status struct {
 	MessageCount int    `json:"messageCount"`
 	ConfigFile   string `json:"configFile"`
 	Dirty        bool   `json:"dirty"`
+	LastError    string `json:"lastError,omitempty"`
 }
 
 func New(state *store.Store) *Controller {
@@ -47,6 +50,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 		OnStateChange: c.updateRuntimeState,
 		OnError: func(err error) {
 			log.Printf("HSMS runtime error: %v", err)
+			c.store.SetRuntimeError(normalizeRuntimeError(err))
 		},
 	})
 	c.cancel = cancel
@@ -107,6 +111,7 @@ func (c *Controller) Status() Status {
 		MessageCount: len(snapshot.Messages),
 		ConfigFile:   snapshot.Runtime.ConfigFile,
 		Dirty:        snapshot.Runtime.Dirty,
+		LastError:    snapshot.Runtime.LastError,
 	}
 }
 
@@ -273,5 +278,34 @@ func autoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.M
 		return hsms.BuildS2F26(uint16(config.HSMS.SessionID), message.SystemBytes, message.Body), true
 	default:
 		return hsms.Message{}, false
+	}
+}
+
+func normalizeRuntimeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, io.EOF) {
+		return "connection closed by peer"
+	}
+
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "unknown runtime error"
+	}
+
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "connection refused"):
+		return "connection refused"
+	case strings.Contains(lower, "broken pipe"),
+		strings.Contains(lower, "connection reset"),
+		strings.Contains(lower, "reset by peer"),
+		strings.Contains(lower, "use of closed network connection"):
+		return "connection dropped"
+	case strings.Contains(lower, "i/o timeout"):
+		return "transport timeout"
+	default:
+		return message
 	}
 }

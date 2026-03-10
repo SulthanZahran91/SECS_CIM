@@ -12,6 +12,7 @@ export interface RuntimeState {
   hsmsState: string;
   configFile: string;
   dirty: boolean;
+  lastError?: string;
 }
 
 export interface HsmsConfig {
@@ -120,4 +121,3 @@ export interface ConditionEvaluation {
 
 export type LeftTab = "rules" | "state" | "hsms";
 export type DetailTab = "decoded" | "raw" | "rule";
-

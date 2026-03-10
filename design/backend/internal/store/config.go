@@ -82,6 +82,7 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 
 	snapshot := model.CloneSnapshot(base)
 	snapshot.Runtime.ConfigFile = path
+	snapshot.Runtime.LastError = ""
 	snapshot.HSMS = model.HsmsConfig{
 		Mode:      config.HSMS.Mode,
 		IP:        config.HSMS.IP,

@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"secsim/design/backend/internal/model"
@@ -110,6 +111,19 @@ func (s *Store) SetRuntime(listening bool, hsmsState string) model.Snapshot {
 	return s.snapshotAndPublishLocked()
 }
 
+func (s *Store) SetRuntimeError(message string) model.Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	trimmed := strings.TrimSpace(message)
+	if s.config.Runtime.LastError == trimmed {
+		return s.snapshotLocked()
+	}
+
+	s.config.Runtime.LastError = trimmed
+	return s.snapshotAndPublishLocked()
+}
+
 func (s *Store) SetHSMSState(hsmsState string) model.Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -157,6 +171,7 @@ func (s *Store) Reload() (model.Snapshot, error) {
 	s.config.Runtime.Listening = currentRuntime.Listening
 	s.config.Runtime.HSMSState = currentRuntime.HSMSState
 	s.config.Runtime.ConfigFile = currentRuntime.ConfigFile
+	s.config.Runtime.LastError = currentRuntime.LastError
 	s.liveState = normalizeState(nextConfig.State)
 	s.messages = currentMessages
 	s.pending = nil
@@ -362,6 +377,9 @@ func (s *Store) updateDirtyLocked() {
 func (s *Store) setRuntimeLocked(listening bool, hsmsState string) {
 	s.config.Runtime.Listening = listening
 	s.config.Runtime.HSMSState = hsmsState
+	if !listening || hsmsState == "LISTENING" || hsmsState == "SELECTED" {
+		s.config.Runtime.LastError = ""
+	}
 	if !listening {
 		s.pending = nil
 	}
@@ -395,6 +413,7 @@ func cloneConfigSnapshot(snapshot model.Snapshot) model.Snapshot {
 	cloned := model.CloneSnapshot(snapshot)
 	cloned.Messages = []model.MessageRecord{}
 	cloned.Runtime.Dirty = false
+	cloned.Runtime.LastError = ""
 	return cloned
 }
 

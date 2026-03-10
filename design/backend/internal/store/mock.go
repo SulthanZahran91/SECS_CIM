@@ -9,6 +9,7 @@ func seedSnapshot() model.Snapshot {
 			HSMSState:  "NOT CONNECTED",
 			ConfigFile: "stocker-sim.yaml",
 			Dirty:      false,
+			LastError:  "",
 		},
 		HSMS: model.HsmsConfig{
 			Mode:      "passive",

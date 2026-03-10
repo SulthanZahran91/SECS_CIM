@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Badge, SectionHeader, TabButton } from "./ui";
 import type { DetailTab, MessageRecord } from "../types";
 
@@ -20,12 +21,64 @@ export function MessageMonitor({
   onJumpToRule,
   onClearLog,
 }: MessageMonitorProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousCountRef = useRef(messages.length);
+  const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
+  const [pendingMessageCount, setPendingMessageCount] = useState(0);
   const selectedMessage = selectedMessageId ? messages.find((message) => message.id === selectedMessageId) ?? null : null;
+
+  useEffect(() => {
+    const nextCount = messages.length;
+    const previousCount = previousCountRef.current;
+    previousCountRef.current = nextCount;
+
+    if (nextCount === 0) {
+      setPendingMessageCount(0);
+      return;
+    }
+
+    if (nextCount <= previousCount) {
+      if (isPinnedToBottom) {
+        scrollToBottom(scrollRef.current);
+      }
+      setPendingMessageCount(0);
+      return;
+    }
+
+    if (isPinnedToBottom) {
+      scrollToBottom(scrollRef.current);
+      setPendingMessageCount(0);
+      return;
+    }
+
+    setPendingMessageCount((current) => current + (nextCount - previousCount));
+  }, [isPinnedToBottom, messages]);
+
+  function handleScroll() {
+    const atBottom = isNearBottom(scrollRef.current);
+    setIsPinnedToBottom(atBottom);
+    if (atBottom) {
+      setPendingMessageCount(0);
+    }
+  }
+
+  function jumpToLatest() {
+    scrollToBottom(scrollRef.current);
+    setIsPinnedToBottom(true);
+    setPendingMessageCount(0);
+  }
 
   return (
     <div className="monitor-shell">
       <div className="monitor-list">
-        <SectionHeader right={<button className="text-button" onClick={onClearLog} type="button">Clear log</button>}>
+        <SectionHeader
+          right={
+            <div className="monitor-actions">
+              <Badge tone={isPinnedToBottom ? "green" : "yellow"}>{isPinnedToBottom ? "Live tail" : "Paused"}</Badge>
+              <button className="text-button" onClick={onClearLog} type="button">Clear log</button>
+            </div>
+          }
+        >
           Message Log
         </SectionHeader>
         <div className="message-header">
@@ -35,27 +88,36 @@ export function MessageMonitor({
           <span className="info-col">Info</span>
           <span className="rule-col">Matched Rule</span>
         </div>
-        <div className="message-scroll">
-          {messages.length === 0 ? <div className="empty-copy padded">Message log is empty.</div> : null}
-          {messages.map((message) => {
-            const selected = message.id === selectedMessageId;
-            return (
-              <button
-                className={`message-row ${selected ? "selected" : ""}`}
-                key={message.id}
-                onClick={() => onSelectMessage(selected ? null : message.id)}
-                type="button"
-              >
-                <span className="time-col subtle-text">{message.timestamp}</span>
-                <span className="dir-col">
-                  <Badge tone={message.direction === "IN" ? "green" : "blue"}>{message.direction}</Badge>
-                </span>
-                <span className="sf-col sf-text">{message.sf}</span>
-                <span className="info-col">{message.label}</span>
-                <span className="rule-col matched-rule-text">{message.matchedRule ?? "—"}</span>
+        <div className="message-scroll-wrap">
+          <div className="message-scroll" onScroll={handleScroll} ref={scrollRef}>
+            {messages.length === 0 ? <div className="empty-copy padded">Message log is empty.</div> : null}
+            {messages.map((message) => {
+              const selected = message.id === selectedMessageId;
+              return (
+                <button
+                  className={`message-row ${selected ? "selected" : ""}`}
+                  key={message.id}
+                  onClick={() => onSelectMessage(selected ? null : message.id)}
+                  type="button"
+                >
+                  <span className="time-col subtle-text">{message.timestamp}</span>
+                  <span className="dir-col">
+                    <Badge tone={message.direction === "IN" ? "green" : "blue"}>{message.direction}</Badge>
+                  </span>
+                  <span className="sf-col sf-text">{message.sf}</span>
+                  <span className="info-col">{message.label}</span>
+                  <span className="rule-col matched-rule-text">{message.matchedRule ?? "—"}</span>
+                </button>
+              );
+            })}
+          </div>
+          {!isPinnedToBottom && pendingMessageCount > 0 ? (
+            <div className="tail-indicator">
+              <button className="tail-button" onClick={jumpToLatest} type="button">
+                ↓ {pendingMessageCount} new {pendingMessageCount === 1 ? "message" : "messages"}
               </button>
-            );
-          })}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -166,3 +228,25 @@ export function MessageMonitor({
   );
 }
 
+function isNearBottom(element: HTMLDivElement | null): boolean {
+  if (!element) {
+    return true;
+  }
+
+  const remaining = element.scrollHeight - element.clientHeight - element.scrollTop;
+  return remaining <= 50;
+}
+
+function scrollToBottom(element: HTMLDivElement | null) {
+  if (!element) {
+    return;
+  }
+
+  const top = element.scrollHeight;
+  if (typeof element.scrollTo === "function") {
+    element.scrollTo({ top, behavior: "auto" });
+    return;
+  }
+
+  element.scrollTop = top;
+}

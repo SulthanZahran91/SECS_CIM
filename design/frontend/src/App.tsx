@@ -27,7 +27,8 @@ export default function App() {
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("decoded");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,10 +45,13 @@ export default function App() {
       try {
         const nextSnapshot = JSON.parse(event.data) as Snapshot;
         replaceSnapshot(nextSnapshot);
-        setError(null);
+        setStreamError(null);
       } catch {
         // Ignore malformed stream payloads and keep the last good snapshot.
       }
+    };
+    stream.onerror = () => {
+      setStreamError("Live updates disconnected. Reconnecting…");
     };
 
     return () => {
@@ -109,12 +113,12 @@ export default function App() {
 
   async function load() {
     setLoading(true);
-    setError(null);
+    setRequestError(null);
     try {
       const nextSnapshot = await api.bootstrap();
       replaceSnapshot(nextSnapshot);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load simulator state");
+      setRequestError(loadError instanceof Error ? loadError.message : "Failed to load simulator state");
     } finally {
       setLoading(false);
     }
@@ -140,7 +144,7 @@ export default function App() {
   }
 
   async function run(action: () => Promise<Snapshot>, nextNotice?: string) {
-    setError(null);
+    setRequestError(null);
     try {
       const nextSnapshot = await action();
       replaceSnapshot(nextSnapshot);
@@ -148,12 +152,12 @@ export default function App() {
         setNotice(nextNotice);
       }
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Request failed");
+      setRequestError(actionError instanceof Error ? actionError.message : "Request failed");
     }
   }
 
   function applyOptimistic(update: (current: Snapshot) => Snapshot, action: () => Promise<Snapshot>) {
-    setError(null);
+    setRequestError(null);
     setNotice(null);
     startTransition(() => {
       setSnapshot((current) => (current ? update(current) : current));
@@ -163,7 +167,7 @@ export default function App() {
         replaceSnapshot(nextSnapshot);
       })
       .catch((actionError) => {
-        setError(actionError instanceof Error ? actionError.message : "Request failed");
+        setRequestError(actionError instanceof Error ? actionError.message : "Request failed");
         void load();
       });
   }
@@ -197,9 +201,9 @@ export default function App() {
     try {
       await navigator.clipboard.writeText(ruleToYaml(rule));
       setNotice(`Copied ${rule.name} as YAML`);
-      setError(null);
+      setRequestError(null);
     } catch {
-      setError("Clipboard export failed");
+      setRequestError("Clipboard export failed");
     }
   }
 
@@ -209,11 +213,13 @@ export default function App() {
 
   if (!snapshot) {
     return (
-      <div className="loading-screen" role={error ? "alert" : undefined}>
-        {error ?? "No simulator state available."}
+      <div className="loading-screen" role={requestError ? "alert" : undefined}>
+        {requestError ?? "No simulator state available."}
       </div>
     );
   }
+
+  const runtimeWarning = snapshot.runtime.lastError ? `Transport issue: ${snapshot.runtime.lastError}` : null;
 
   return (
     <div className="app-shell">
@@ -225,8 +231,10 @@ export default function App() {
         onSave={() => void run(api.saveConfig, "Config saved")}
       />
 
-      {error ? <div className="banner error">{error}</div> : null}
-      {!error && notice ? <div className="banner notice">{notice}</div> : null}
+      {requestError ? <div className="banner error">{requestError}</div> : null}
+      {!requestError && streamError ? <div className="banner warning">{streamError}</div> : null}
+      {!requestError && !streamError && runtimeWarning ? <div className="banner warning">{runtimeWarning}</div> : null}
+      {!requestError && !streamError && !runtimeWarning && notice ? <div className="banner notice">{notice}</div> : null}
 
       <div className="main-split">
         <section className="left-panel">
@@ -299,6 +307,7 @@ export default function App() {
               {snapshot.hsms.mode} · {snapshot.hsms.ip}:{snapshot.hsms.port}
             </span>
             <span>Messages: {snapshot.messages.length}</span>
+            {snapshot.runtime.lastError ? <span className="text-red">Transport: {snapshot.runtime.lastError}</span> : null}
             <span className="status-spacer" />
             <span>Rules: {snapshot.rules.length}</span>
             <span>{snapshot.runtime.configFile}</span>

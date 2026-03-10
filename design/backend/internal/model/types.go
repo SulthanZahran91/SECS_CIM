@@ -16,6 +16,7 @@ type RuntimeState struct {
 	HSMSState  string `json:"hsmsState"`
 	ConfigFile string `json:"configFile"`
 	Dirty      bool   `json:"dirty"`
+	LastError  string `json:"lastError,omitempty"`
 }
 
 type HsmsConfig struct {

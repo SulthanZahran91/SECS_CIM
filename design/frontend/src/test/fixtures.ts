@@ -6,6 +6,7 @@ const baseSnapshot: Snapshot = {
     hsmsState: "SELECTED",
     configFile: "stocker-sim.yaml",
     dirty: true,
+    lastError: "",
   },
   hsms: {
     mode: "passive",
@@ -103,4 +104,3 @@ const baseSnapshot: Snapshot = {
 export function makeSnapshot(): Snapshot {
   return structuredClone(baseSnapshot);
 }
-

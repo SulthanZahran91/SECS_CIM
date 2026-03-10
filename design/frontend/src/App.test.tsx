@@ -40,6 +40,10 @@ class MockEventSource {
     this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent<string>);
   }
 
+  emitError() {
+    this.onerror?.(new Event("error"));
+  }
+
   static reset() {
     MockEventSource.instances = [];
   }
@@ -183,5 +187,34 @@ describe("App", () => {
 
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
     expect(await screen.findByText("online-local")).toBeInTheDocument();
+  });
+
+  it("surfaces runtime transport warnings from live snapshots", async () => {
+    render(<App />);
+
+    await screen.findByText("2 rules");
+
+    const liveSnapshot = makeSnapshot();
+    liveSnapshot.runtime.hsmsState = "CONNECTING";
+    liveSnapshot.runtime.lastError = "connection refused";
+
+    await act(async () => {
+      MockEventSource.instances[0].emit(liveSnapshot);
+    });
+
+    expect(await screen.findByText("Transport issue: connection refused")).toBeInTheDocument();
+    expect(screen.getByText("Transport issue")).toBeInTheDocument();
+  });
+
+  it("shows a reconnecting warning when the live update stream drops", async () => {
+    render(<App />);
+
+    await screen.findByText("2 rules");
+
+    await act(async () => {
+      MockEventSource.instances[0].emitError();
+    });
+
+    expect(await screen.findByText("Live updates disconnected. Reconnecting…")).toBeInTheDocument();
   });
 });

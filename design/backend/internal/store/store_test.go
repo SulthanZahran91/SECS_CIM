@@ -251,6 +251,31 @@ func TestDeleteRuleReturnsNotFoundForUnknownID(t *testing.T) {
 	}
 }
 
+func TestRuntimeErrorClearsOnRecovery(t *testing.T) {
+	store := New()
+
+	store.SetRuntimeError("connection refused")
+	if got := store.Snapshot().Runtime.LastError; got != "connection refused" {
+		t.Fatalf("expected runtime error to be stored, got %q", got)
+	}
+
+	store.SetRuntime(true, "CONNECTING")
+	if got := store.Snapshot().Runtime.LastError; got != "connection refused" {
+		t.Fatalf("expected runtime error to persist while reconnecting, got %q", got)
+	}
+
+	store.SetRuntime(true, "SELECTED")
+	if got := store.Snapshot().Runtime.LastError; got != "" {
+		t.Fatalf("expected runtime error to clear on recovery, got %q", got)
+	}
+
+	store.SetRuntimeError("connection dropped")
+	store.SetRuntime(false, "NOT CONNECTED")
+	if got := store.Snapshot().Runtime.LastError; got != "" {
+		t.Fatalf("expected runtime error to clear when stopped, got %q", got)
+	}
+}
+
 func TestDirtyTrackingClearsWhenConfigMatchesBaselineAgain(t *testing.T) {
 	store := New()
 
