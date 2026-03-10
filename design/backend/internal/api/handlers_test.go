@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"secsim/design/backend/internal/model"
+	"secsim/design/backend/internal/sim"
 	"secsim/design/backend/internal/store"
 )
 
@@ -20,7 +21,7 @@ func newTestMux() *http.ServeMux {
 
 func newTestMuxWithStore(state *store.Store) *http.ServeMux {
 	mux := http.NewServeMux()
-	Register(mux, state)
+	Register(mux, state, sim.New(state))
 	return mux
 }
 
@@ -239,5 +240,63 @@ func TestReloadEndpointReturnsValidationErrorsForInvalidYAML(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), "invalid config") {
 		t.Fatalf("expected invalid config error body, got %s", recorder.Body.String())
+	}
+}
+
+func TestSimLifecycleAndInjectEndpoints(t *testing.T) {
+	mux := newTestMux()
+
+	statusBefore := doRequest(t, mux, http.MethodGet, "/api/sim/status", nil)
+	if statusBefore.Code != http.StatusOK {
+		t.Fatalf("expected 200 from status, got %d", statusBefore.Code)
+	}
+	if decodeMap(t, statusBefore)["running"] != false {
+		t.Fatalf("expected simulator to start stopped")
+	}
+
+	startRecorder := doRequest(t, mux, http.MethodPost, "/api/sim/start", nil)
+	if startRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from start, got %d", startRecorder.Code)
+	}
+	started := decodeSnapshot(t, startRecorder)
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "NOT CONNECTED" {
+		t.Fatalf("expected simulator to start in listening/not-connected state, got %#v", started.Runtime)
+	}
+
+	injectRecorder := doRequest(t, mux, http.MethodPost, "/api/sim/inject", map[string]any{
+		"stream":   2,
+		"function": 41,
+		"wbit":     true,
+		"rcmd":     "TRANSFER",
+		"fields": map[string]string{
+			"SourcePort": "LP01",
+		},
+	})
+	if injectRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from inject, got %d: %s", injectRecorder.Code, injectRecorder.Body.String())
+	}
+	injected := decodeSnapshot(t, injectRecorder)
+	if len(injected.Messages) != 9 {
+		t.Fatalf("expected inject to append inbound + reply messages, got %d", len(injected.Messages))
+	}
+	if injected.Messages[len(injected.Messages)-2].MatchedRuleID != "rule-1" {
+		t.Fatalf("expected injected inbound message to match rule-1, got %#v", injected.Messages[len(injected.Messages)-2])
+	}
+
+	stopRecorder := doRequest(t, mux, http.MethodPost, "/api/sim/stop", nil)
+	if stopRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from stop, got %d", stopRecorder.Code)
+	}
+	stopped := decodeSnapshot(t, stopRecorder)
+	if stopped.Runtime.Listening {
+		t.Fatalf("expected simulator to stop, got %#v", stopped.Runtime)
+	}
+
+	injectWhileStopped := doRequest(t, mux, http.MethodPost, "/api/sim/inject", map[string]any{
+		"stream":   2,
+		"function": 41,
+	})
+	if injectWhileStopped.Code != http.StatusConflict {
+		t.Fatalf("expected 409 when injecting while stopped, got %d", injectWhileStopped.Code)
 	}
 }

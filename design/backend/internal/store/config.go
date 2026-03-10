@@ -272,17 +272,17 @@ func nextIdentifierValue(prefix string, ids []string) int {
 	return next
 }
 
-func ruleIDs(snapshot model.Snapshot) []string {
-	ids := make([]string, 0, len(snapshot.Rules))
-	for _, rule := range snapshot.Rules {
+func ruleIDs(rules []model.Rule) []string {
+	ids := make([]string, 0, len(rules))
+	for _, rule := range rules {
 		ids = append(ids, rule.ID)
 	}
 	return ids
 }
 
-func actionIDs(snapshot model.Snapshot) []string {
+func actionIDs(rules []model.Rule) []string {
 	var ids []string
-	for _, rule := range snapshot.Rules {
+	for _, rule := range rules {
 		for _, action := range rule.Actions {
 			ids = append(ids, action.ID)
 		}

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"secsim/design/backend/internal/api"
+	"secsim/design/backend/internal/sim"
 	"secsim/design/backend/internal/store"
 )
 
@@ -19,9 +20,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config %s: %v", configPath, err)
 	}
+	simulator := sim.New(state)
 
 	mux := http.NewServeMux()
-	api.Register(mux, state)
+	api.Register(mux, state, simulator)
 	registerFrontend(mux)
 
 	log.Printf("SECSIM backend listening on %s", addr)

@@ -1,0 +1,208 @@
+package store
+
+import (
+	"testing"
+	"time"
+)
+
+func TestProcessInboundMatchesFirstRuleAndSchedulesActions(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	now := time.Date(2026, time.March, 10, 16, 0, 0, 0, time.UTC)
+	result := store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+		Body:   "TRANSFER from LP01",
+		RawSML: "S2F41 W TRANSFER LP01",
+	}, now)
+
+	if result.MatchedRuleID != "rule-1" || result.MatchedRule != "accept transfer" {
+		t.Fatalf("expected rule-1 match, got %#v", result)
+	}
+	if result.Reply == nil {
+		t.Fatalf("expected immediate reply record")
+	}
+	if len(store.pending) != 4 {
+		t.Fatalf("expected 4 scheduled actions, got %d", len(store.pending))
+	}
+	if result.Snapshot.Runtime.Dirty {
+		t.Fatalf("expected runtime processing to leave config clean")
+	}
+	if result.Snapshot.State.Ports["LP01"] != "occupied" {
+		t.Fatalf("expected state mutation to be deferred until scheduled actions run")
+	}
+	if len(result.Snapshot.Messages) != 2 {
+		t.Fatalf("expected inbound and reply messages, got %d", len(result.Snapshot.Messages))
+	}
+
+	inbound := result.Snapshot.Messages[0]
+	if inbound.MatchedRuleID != "rule-1" || len(inbound.Evaluations) != 2 {
+		t.Fatalf("expected inbound message diagnostics for matched rule, got %#v", inbound)
+	}
+	for _, evaluation := range inbound.Evaluations {
+		if !evaluation.Passed {
+			t.Fatalf("expected all matched rule evaluations to pass, got %#v", inbound.Evaluations)
+		}
+	}
+
+	if result.Reply.SF != "S2F42" {
+		t.Fatalf("expected S2F42 reply, got %#v", result.Reply)
+	}
+}
+
+func TestProcessInboundFallsThroughToLaterRule(t *testing.T) {
+	store := New()
+	store.ClearLog()
+	store.liveState.Ports["LP01"] = "blocked"
+
+	now := time.Date(2026, time.March, 10, 16, 5, 0, 0, time.UTC)
+	result := store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP02",
+		},
+	}, now)
+
+	if result.MatchedRuleID != "rule-2" || result.MatchedRule != "reject when blocked" {
+		t.Fatalf("expected fallback match against rule-2, got %#v", result)
+	}
+	if result.Reply == nil || result.Reply.Detail.Body == "" {
+		t.Fatalf("expected reply from fallback rule, got %#v", result.Reply)
+	}
+	if result.Snapshot.Messages[0].MatchedRuleID != "rule-2" {
+		t.Fatalf("expected inbound log to reference rule-2, got %#v", result.Snapshot.Messages[0])
+	}
+}
+
+func TestProcessInboundCapturesDiagnosticsForNearMiss(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	now := time.Date(2026, time.March, 10, 16, 10, 0, 0, time.UTC)
+	result := store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP99",
+		},
+	}, now)
+
+	if result.MatchedRuleID != "" {
+		t.Fatalf("expected no full rule match, got %#v", result)
+	}
+	if len(result.Snapshot.Messages) != 1 {
+		t.Fatalf("expected unmatched inbound log only, got %d", len(result.Snapshot.Messages))
+	}
+
+	inbound := result.Snapshot.Messages[0]
+	if len(inbound.Evaluations) != 2 {
+		t.Fatalf("expected diagnostics from first near-miss rule, got %#v", inbound)
+	}
+	if inbound.Evaluations[0].Field != "carrier_exists" || !inbound.Evaluations[0].Passed {
+		t.Fatalf("expected carrier_exists diagnostic to pass, got %#v", inbound.Evaluations)
+	}
+	if inbound.Evaluations[1].Field != "source_equals" || inbound.Evaluations[1].Passed {
+		t.Fatalf("expected source_equals diagnostic to fail, got %#v", inbound.Evaluations)
+	}
+}
+
+func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	now := time.Date(2026, time.March, 10, 16, 15, 0, 0, time.UTC)
+	store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+	}, now)
+
+	early, err := store.RunScheduled(now.Add(300 * time.Millisecond))
+	if err != nil {
+		t.Fatalf("run early scheduled actions: %v", err)
+	}
+	if len(early.Emitted) != 1 || early.Emitted[0].Label != "TRANSFER_INITIATED" {
+		t.Fatalf("expected first event at +300ms, got %#v", early.Emitted)
+	}
+	if early.Snapshot.State.Ports["LP01"] != "occupied" {
+		t.Fatalf("expected no mutation before +1200ms, got %#v", early.Snapshot.State)
+	}
+
+	late, err := store.RunScheduled(now.Add(1200 * time.Millisecond))
+	if err != nil {
+		t.Fatalf("run late scheduled actions: %v", err)
+	}
+	if len(late.Emitted) != 1 || late.Emitted[0].Label != "TRANSFER_COMPLETED" {
+		t.Fatalf("expected completion event at +1200ms, got %#v", late.Emitted)
+	}
+	if late.Snapshot.State.Ports["LP01"] != "empty" {
+		t.Fatalf("expected LP01 mutation to apply, got %#v", late.Snapshot.State.Ports)
+	}
+	if late.Snapshot.State.Carriers["CARR001"].Location != "SHELF_A01" {
+		t.Fatalf("expected carrier mutation to apply, got %#v", late.Snapshot.State.Carriers)
+	}
+	if late.Snapshot.Runtime.Dirty {
+		t.Fatalf("expected runtime mutations to leave config clean")
+	}
+	if len(store.pending) != 0 {
+		t.Fatalf("expected scheduled queue to drain, got %d", len(store.pending))
+	}
+}
+
+func TestRuntimeMutationsDoNotPersistAsConfig(t *testing.T) {
+	store, _ := newFileBackedStore(t)
+	store.ClearLog()
+
+	now := time.Date(2026, time.March, 10, 16, 20, 0, 0, time.UTC)
+	store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+	}, now)
+
+	if _, err := store.RunScheduled(now.Add(1200 * time.Millisecond)); err != nil {
+		t.Fatalf("run scheduled actions: %v", err)
+	}
+
+	mutated := store.Snapshot()
+	if mutated.State.Ports["LP01"] != "empty" {
+		t.Fatalf("expected live state to mutate before save, got %#v", mutated.State.Ports)
+	}
+	if mutated.Runtime.Dirty {
+		t.Fatalf("expected runtime-only state changes not to dirty config")
+	}
+
+	if _, err := store.Save(); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	reloaded, err := store.Reload()
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+
+	if reloaded.State.Ports["LP01"] != "occupied" {
+		t.Fatalf("expected reload to restore configured initial state, got %#v", reloaded.State.Ports)
+	}
+	if reloaded.State.Carriers["CARR001"].Location != "LP01" {
+		t.Fatalf("expected reload to restore configured carrier location, got %#v", reloaded.State.Carriers)
+	}
+}

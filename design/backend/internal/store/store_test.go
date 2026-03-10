@@ -217,8 +217,8 @@ rules:
 		t.Fatalf("reload snapshot: %v", err)
 	}
 
-	if snapshot.Runtime.Listening {
-		t.Fatalf("expected runtime listening state to be preserved as false")
+	if !snapshot.Runtime.Listening {
+		t.Fatalf("expected runtime listening state to be preserved as true")
 	}
 
 	if snapshot.Runtime.HSMSState != "NOT CONNECTED" {

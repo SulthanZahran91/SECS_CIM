@@ -10,12 +10,13 @@ Current reality:
 
 - The repository contains a working TSX + Go scaffold.
 - The UI shell, API surface, tests, and packaging flow exist.
-- Real HSMS transport, SECS-II protocol handling, YAML persistence, and live simulator execution are not implemented yet.
+- File-backed config persistence and backend rule/runtime execution now exist.
+- Real HSMS transport, SECS-II codec support, and live frontend subscriptions are not implemented yet.
 
 The design references remain:
 
 - [UI_design.tsx](/home/dev/projects/SECSIM/design/UI_design.tsx)
-- [spec.md](/home/dev/projects/SECSIM/design/spec.md)
+- [spec_in_go.md](/home/dev/projects/SECSIM/design/spec_in_go.md)
 
 ## Status Legend
 
@@ -30,7 +31,7 @@ The design references remain:
 |---|---|---|
 | 0. Scaffold Baseline | Completed | TSX frontend, Go API, docs, packaging, and test harness exist |
 | 1. Config + Persistence | Completed | Backend now boots from YAML, saves atomically to disk, and reloads file-backed state |
-| 2. Rule Engine + State Mutations | Partial | Rule editing exists, but runtime execution is still mock data |
+| 2. Rule Engine + State Mutations | Partial | Backend matcher, replies, scheduler, and live state mutations exist, but they are not wired to live HSMS traffic yet |
 | 3. HSMS Transport | Pending | No real listener/client/session implementation exists |
 | 4. SECS-II Codec + Message Pipeline | Pending | No real frame parsing, encoding, or live pipeline exists |
 | 5. Live UI Integration | Partial | UI is complete as shell, but it is not driven by live simulator traffic |
@@ -96,15 +97,18 @@ Done:
 - Rule data structures exist
 - Rule CRUD, duplication, and reordering API exists
 - UI supports editing conditions, reply templates, and actions
+- The backend now keeps a live runtime state store separate from persisted `initial_state`
+- The backend can match inbound commands against rules in order
+- Matched rules generate immediate reply records plus delayed event/mutate actions
+- Scheduled mutations update the live state store without dirtying persisted config
+- Basic rule-match diagnostics are recorded on inbound message records for matched and near-miss cases
+- A simulator controller now wires the rule engine into `/api/sim/start`, `/api/sim/stop`, `/api/sim/status`, and an injection path for backend-driven testing
 
 Remaining:
 
-- Evaluate inbound messages against rules in order
-- Implement condition evaluation against live state
-- Generate synchronous replies from rule templates
-- Schedule delayed event and mutate actions
-- Apply mutations to the live state store
-- Record rule-match diagnostics for the detail pane
+- Feed decoded SECS-II traffic into the rule engine from the real runtime path
+- Expand field extraction beyond the current state-path and special-predicate matcher set
+- Surface runtime-generated messages and state mutations to the frontend live update path
 
 Exit criteria:
 
@@ -199,18 +203,18 @@ The biggest missing pieces are:
 
 1. Real HSMS socket/session handling
 2. Real SECS-II encode/decode
-3. Runtime rule execution against live messages
+3. Wiring decoded live traffic into the rule engine/runtime pipeline instead of the current simulated injection path
 4. Live backend-to-frontend updates
 5. End-to-end acceptance coverage for live protocol sessions
 
 ## Recommended Next Step
 
-Implement the remaining Phase 2 backend runtime foundations first:
+Implement the runtime integration path next:
 
-1. Live state store
-2. Rule matcher
-3. Timed action scheduler
-4. Message record pipeline interfaces
-5. Rule-match diagnostics capture
+1. Add an `internal/hsms` session/connection layer
+2. Add decoded message pipeline interfaces that call into the Phase 2 rule engine
+3. Wire standard auto-responses alongside rule-driven replies
+4. Emit backend runtime updates that the frontend can subscribe to
+5. Add protocol-level acceptance tests around a simulated command flow
 
-That creates the correct backend core before building the actual HSMS transport layer.
+That connects the Phase 2 backend core to real protocol traffic.
