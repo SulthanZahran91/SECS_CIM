@@ -77,65 +77,86 @@ export function MessageMonitor({
               {detailTab === "decoded" ? (
                 <div className="detail-grid">
                   <div className="detail-summary">
-                    <span>
-                      <span className="subtle-text">Stream:</span> <span className="sf-text">{selectedMessage.detail.stream}</span>
-                    </span>
-                    <span>
-                      <span className="subtle-text">Function:</span>{" "}
-                      <span className="sf-text">{selectedMessage.detail.function}</span>
-                    </span>
-                    <span>
-                      <span className="subtle-text">W-bit:</span>{" "}
+                    <div className="field-group">
+                      <span className="detail-label">Stream</span>
+                      <span className="sf-text" style={{ fontSize: 16 }}>{selectedMessage.detail.stream}</span>
+                    </div>
+                    <div className="field-group">
+                      <span className="detail-label">Function</span>
+                      <span className="sf-text" style={{ fontSize: 16 }}>{selectedMessage.detail.function}</span>
+                    </div>
+                    <div className="field-group">
+                      <span className="detail-label">W-bit</span>
                       <span className={selectedMessage.detail.wbit ? "text-green" : "subtle-text"}>
-                        {selectedMessage.detail.wbit ? "yes" : "no"}
+                        {selectedMessage.detail.wbit ? "SET (Wait)" : "NOT SET"}
                       </span>
-                    </span>
-                    <span>
-                      <span className="subtle-text">Direction:</span>{" "}
+                    </div>
+                    <div className="field-group">
+                      <span className="detail-label">Direction</span>
                       <Badge tone={selectedMessage.direction === "IN" ? "green" : "blue"}>
-                        {selectedMessage.direction}
+                        {selectedMessage.direction === "IN" ? "INCOMING" : "OUTGOING"}
                       </Badge>
-                    </span>
+                    </div>
                   </div>
-                  <div className="detail-label">Body (SML tree)</div>
+                  <div className="detail-label" style={{ marginTop: 8 }}>Body (SML Tree)</div>
                   <pre className="detail-code">{selectedMessage.detail.body}</pre>
                 </div>
               ) : null}
 
-              {detailTab === "raw" ? <pre className="detail-code">{selectedMessage.detail.rawSml}</pre> : null}
+              {detailTab === "raw" ? (
+                <div className="detail-grid">
+                  <div className="detail-label">Raw SML Representation</div>
+                  <pre className="detail-code">{selectedMessage.detail.rawSml}</pre>
+                </div>
+              ) : null}
 
               {detailTab === "rule" ? (
-                selectedMessage.matchedRule ? (
-                  <div className="matched-rule-panel">
-                    <button
-                      className="text-link"
-                      onClick={() => onJumpToRule(selectedMessage.matchedRuleId)}
-                      type="button"
-                    >
-                      Rule: {selectedMessage.matchedRule}
-                    </button>
-                    {selectedMessage.evaluations?.length ? (
-                      <div className="stack-list">
-                        {selectedMessage.evaluations.map((evaluation, index) => (
-                          <div className="evaluation-row" key={`${selectedMessage.id}-evaluation-${index}`}>
-                            <span className="mono">{evaluation.field}</span>
-                            <span className="subtle-text">expected</span>
-                            <span>{evaluation.expected}</span>
-                            <span className="subtle-text">actual</span>
-                            <span>{evaluation.actual}</span>
-                            <Badge tone={evaluation.passed ? "green" : "red"}>
-                              {evaluation.passed ? "pass" : "fail"}
-                            </Badge>
+                <div className="matched-rule-panel">
+                  {selectedMessage.matchedRule ? (
+                    <>
+                      <div className="detail-label">Triggered Rule</div>
+                      <button
+                        className="text-link"
+                        onClick={() => onJumpToRule(selectedMessage.matchedRuleId)}
+                        type="button"
+                        style={{ fontSize: 14, textAlign: "left" }}
+                      >
+                        {selectedMessage.matchedRule}
+                      </button>
+                      
+                      {selectedMessage.evaluations?.length ? (
+                        <>
+                          <div className="detail-label" style={{ marginTop: 12 }}>Condition Evaluations</div>
+                          <div className="stack-list">
+                            {selectedMessage.evaluations.map((evaluation, index) => (
+                              <div className="condition-row" key={`${selectedMessage.id}-evaluation-${index}`} style={{ background: "rgba(0,0,0,0.2)" }}>
+                                <div className="field-group" style={{ flex: 1 }}>
+                                  <span className="field-label">Field</span>
+                                  <span className="mono">{evaluation.field}</span>
+                                </div>
+                                <div className="field-group" style={{ flex: 1 }}>
+                                  <span className="field-label">Expected</span>
+                                  <span>{evaluation.expected}</span>
+                                </div>
+                                <div className="field-group" style={{ flex: 1 }}>
+                                  <span className="field-label">Actual</span>
+                                  <span className={evaluation.passed ? "text-green" : "text-red"}>{evaluation.actual}</span>
+                                </div>
+                                <Badge tone={evaluation.passed ? "green" : "red"}>
+                                  {evaluation.passed ? "PASS" : "FAIL"}
+                                </Badge>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="empty-copy">This message was generated by a matched rule.</div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="empty-copy">No rule matched. This was a session or handshake message.</div>
-                )
+                        </>
+                      ) : (
+                        <div className="empty-copy">This message was a direct response or side effect (no conditions evaluated).</div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="empty-copy">No rule match recorded for this message. It may be a system-level handshake (S1F13, S1F1, etc.).</div>
+                  )}
+                </div>
               ) : null}
             </div>
           </>

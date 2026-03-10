@@ -68,7 +68,13 @@ func (h *Handler) saveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.store.Save())
+	snapshot, err := h.store.Save()
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, snapshot)
 }
 
 func (h *Handler) reloadConfig(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +83,13 @@ func (h *Handler) reloadConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.store.Reload())
+	snapshot, err := h.store.Reload()
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, snapshot)
 }
 
 func (h *Handler) clearLog(w http.ResponseWriter, r *http.Request) {

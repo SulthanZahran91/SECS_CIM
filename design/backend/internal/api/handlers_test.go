@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,8 +15,12 @@ import (
 )
 
 func newTestMux() *http.ServeMux {
+	return newTestMuxWithStore(store.New())
+}
+
+func newTestMuxWithStore(state *store.Store) *http.ServeMux {
 	mux := http.NewServeMux()
-	Register(mux, store.New())
+	Register(mux, state)
 	return mux
 }
 
@@ -208,5 +214,30 @@ func TestDeleteRuleReturnsNotFoundForMissingID(t *testing.T) {
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing rule, got %d", recorder.Code)
+	}
+}
+
+func TestReloadEndpointReturnsValidationErrorsForInvalidYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stocker-sim.yaml")
+	fileStore, err := store.NewFromFile(path)
+	if err != nil {
+		t.Fatalf("create file-backed store: %v", err)
+	}
+
+	if _, err := fileStore.Save(); err != nil {
+		t.Fatalf("seed config file: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("rules:\n  - name: broken\n    events: ["), 0o644); err != nil {
+		t.Fatalf("write invalid YAML: %v", err)
+	}
+
+	mux := newTestMuxWithStore(fileStore)
+	recorder := doRequest(t, mux, http.MethodPost, "/api/config/reload", nil)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid YAML reload, got %d", recorder.Code)
+	}
+	if !strings.Contains(recorder.Body.String(), "invalid config") {
+		t.Fatalf("expected invalid config error body, got %s", recorder.Body.String())
 	}
 }

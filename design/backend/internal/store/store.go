@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	ErrRuleNotFound = errors.New("rule not found")
+	ErrRuleNotFound  = errors.New("rule not found")
+	ErrInvalidConfig = errors.New("invalid config")
 )
 
 type Store struct {
@@ -18,16 +19,52 @@ type Store struct {
 	baseline     model.Snapshot
 	nextRuleID   int
 	nextActionID int
+	configPath   string
 }
 
 func New() *Store {
 	snapshot := seedSnapshot()
-	return &Store{
-		snapshot:     model.CloneSnapshot(snapshot),
-		baseline:     model.CloneSnapshot(snapshot),
-		nextRuleID:   4,
-		nextActionID: 6,
+	return newStore(snapshot, "")
+}
+
+func NewFromFile(path string) (*Store, error) {
+	snapshot := seedSnapshot()
+	if path != "" {
+		snapshot.Runtime.ConfigFile = path
 	}
+
+	store := newStore(snapshot, path)
+	if path == "" {
+		return store, nil
+	}
+
+	loaded, err := loadSnapshotFromYAML(path, snapshot)
+	if err != nil {
+		if errors.Is(err, ErrInvalidConfig) {
+			return nil, err
+		}
+		return store, nil
+	}
+
+	store.snapshot = model.CloneSnapshot(loaded)
+	store.snapshot.Runtime.Dirty = false
+	store.baseline = model.CloneSnapshot(store.snapshot)
+	store.resetIDCountersLocked()
+
+	return store, nil
+}
+
+func newStore(snapshot model.Snapshot, configPath string) *Store {
+	store := &Store{
+		snapshot:   model.CloneSnapshot(snapshot),
+		baseline:   model.CloneSnapshot(snapshot),
+		configPath: configPath,
+	}
+	store.snapshot.Runtime.Dirty = false
+	store.baseline.Runtime.Dirty = false
+	store.resetIDCountersLocked()
+
+	return store
 }
 
 func (s *Store) Snapshot() model.Snapshot {
@@ -51,28 +88,47 @@ func (s *Store) ToggleRuntime() model.Snapshot {
 	return model.CloneSnapshot(s.snapshot)
 }
 
-func (s *Store) Save() model.Snapshot {
+func (s *Store) Save() (model.Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.configPath != "" {
+		if err := writeSnapshotToYAML(s.configPath, s.snapshot); err != nil {
+			return model.Snapshot{}, err
+		}
+	}
 
 	s.snapshot.Runtime.Dirty = false
 	s.baseline = model.CloneSnapshot(s.snapshot)
 
-	return model.CloneSnapshot(s.snapshot)
+	return model.CloneSnapshot(s.snapshot), nil
 }
 
-func (s *Store) Reload() model.Snapshot {
+func (s *Store) Reload() (model.Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	currentRuntime := s.snapshot.Runtime
-	s.snapshot = model.CloneSnapshot(s.baseline)
-	s.snapshot.Runtime.Listening = currentRuntime.Listening
-	s.snapshot.Runtime.HSMSState = currentRuntime.HSMSState
-	s.snapshot.Runtime.ConfigFile = currentRuntime.ConfigFile
-	s.snapshot.Runtime.Dirty = false
+	current := model.CloneSnapshot(s.snapshot)
 
-	return model.CloneSnapshot(s.snapshot)
+	if s.configPath != "" {
+		loaded, err := loadSnapshotFromYAML(s.configPath, s.baseline)
+		if err != nil {
+			return model.Snapshot{}, err
+		}
+		s.snapshot = model.CloneSnapshot(loaded)
+		s.baseline = model.CloneSnapshot(loaded)
+	} else {
+		s.snapshot = model.CloneSnapshot(s.baseline)
+	}
+
+	s.snapshot.Runtime.Listening = current.Runtime.Listening
+	s.snapshot.Runtime.HSMSState = current.Runtime.HSMSState
+	s.snapshot.Runtime.ConfigFile = current.Runtime.ConfigFile
+	s.snapshot.Runtime.Dirty = false
+	s.snapshot.Messages = current.Messages
+	s.resetIDCountersLocked()
+
+	return model.CloneSnapshot(s.snapshot), nil
 }
 
 func (s *Store) ClearLog() model.Snapshot {
@@ -89,7 +145,7 @@ func (s *Store) UpdateHSMS(config model.HsmsConfig) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.snapshot.HSMS = config
-	s.touchDirty()
+	s.updateDirtyLocked()
 
 	return model.CloneSnapshot(s.snapshot)
 }
@@ -99,7 +155,7 @@ func (s *Store) UpdateDevice(device model.DeviceConfig) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.snapshot.Device = device
-	s.touchDirty()
+	s.updateDirtyLocked()
 
 	return model.CloneSnapshot(s.snapshot)
 }
@@ -126,7 +182,7 @@ func (s *Store) NewRule() model.Snapshot {
 		Actions: []model.RuleAction{},
 	}
 	s.snapshot.Rules = append(s.snapshot.Rules, newRule)
-	s.touchDirty()
+	s.updateDirtyLocked()
 
 	return model.CloneSnapshot(s.snapshot)
 }
@@ -151,7 +207,7 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 			updated.Name = "unnamed rule"
 		}
 		s.snapshot.Rules[index] = updated
-		s.touchDirty()
+		s.updateDirtyLocked()
 
 		return model.CloneSnapshot(s.snapshot), nil
 	}
@@ -192,7 +248,7 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 		nextRules = append(nextRules, duplicate)
 		nextRules = append(nextRules, s.snapshot.Rules[index+1:]...)
 		s.snapshot.Rules = nextRules
-		s.touchDirty()
+		s.updateDirtyLocked()
 
 		return model.CloneSnapshot(s.snapshot), nil
 	}
@@ -210,7 +266,7 @@ func (s *Store) DeleteRule(id string) (model.Snapshot, error) {
 		}
 
 		s.snapshot.Rules = append(s.snapshot.Rules[:index], s.snapshot.Rules[index+1:]...)
-		s.touchDirty()
+		s.updateDirtyLocked()
 
 		return model.CloneSnapshot(s.snapshot), nil
 	}
@@ -242,7 +298,7 @@ func (s *Store) MoveRule(id string, direction string) (model.Snapshot, error) {
 		}
 
 		s.snapshot.Rules[index], s.snapshot.Rules[target] = s.snapshot.Rules[target], s.snapshot.Rules[index]
-		s.touchDirty()
+		s.updateDirtyLocked()
 
 		return model.CloneSnapshot(s.snapshot), nil
 	}
@@ -250,8 +306,8 @@ func (s *Store) MoveRule(id string, direction string) (model.Snapshot, error) {
 	return model.Snapshot{}, ErrRuleNotFound
 }
 
-func (s *Store) touchDirty() {
-	s.snapshot.Runtime.Dirty = true
+func (s *Store) updateDirtyLocked() {
+	s.snapshot.Runtime.Dirty = !configEquals(s.snapshot, s.baseline)
 }
 
 func (s *Store) nextRuleIDValue() string {
@@ -264,4 +320,9 @@ func (s *Store) nextActionIDValue() string {
 	id := fmt.Sprintf("action-%d", s.nextActionID)
 	s.nextActionID++
 	return id
+}
+
+func (s *Store) resetIDCountersLocked() {
+	s.nextRuleID = nextIdentifierValue("rule-", ruleIDs(s.snapshot))
+	s.nextActionID = nextIdentifierValue("action-", actionIDs(s.snapshot))
 }

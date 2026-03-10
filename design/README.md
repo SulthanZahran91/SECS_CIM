@@ -6,7 +6,7 @@ This folder now contains a runnable TSX + Go scaffold derived from the reference
 
 - [spec.md](/home/dev/projects/SECSIM/design/spec.md): original product/UI spec
 - [UI_design.tsx](/home/dev/projects/SECSIM/design/UI_design.tsx): original monolithic mock
-- [implementation_plan.md](/home/dev/projects/SECSIM/design/implementation_plan.md): scaffold plan and scope
+- [implementation_plan.md](/home/dev/projects/SECSIM/design/implementation_plan.md): phased delivery tracker and current implementation status
 - `backend/`: Go API and in-memory simulator state
 - `frontend/`: React + TypeScript implementation
 

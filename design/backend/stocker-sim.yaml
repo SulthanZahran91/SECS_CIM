@@ -1,0 +1,94 @@
+hsms:
+  mode: passive
+  ip: "0.0.0.0"
+  port: 5000
+  session_id: 1
+  device_id: 0
+  timers:
+    t3: 45
+    t5: 10
+    t6: 5
+    t7: 10
+    t8: 5
+
+device:
+  name: stocker-A
+  protocol: e88
+  mdln: STOCKER-SIM
+  softrev: 1.0.0
+
+handshake:
+  auto_s1f13: true
+  auto_s1f1: true
+  auto_s2f25: false
+
+initial_state:
+  mode: online-remote
+  ports:
+    LP01: occupied
+    LP02: empty
+    LP03: blocked
+  carriers:
+    CARR001:
+      location: LP01
+    CARR002:
+      location: SHELF_A01
+
+rules:
+  - name: accept transfer
+    enabled: true
+    match:
+      stream: 2
+      function: 41
+      rcmd: TRANSFER
+    conditions:
+      - field: carrier_exists
+        value: CARR001
+      - field: source_equals
+        value: LP01
+    reply:
+      stream: 2
+      function: 42
+      ack: 0
+    events:
+      - delay_ms: 300
+        type: event
+        ceid: TRANSFER_INITIATED
+      - delay_ms: 1200
+        type: mutate
+        target: carriers.CARR001.location
+        value: SHELF_A01
+      - delay_ms: 1200
+        type: mutate
+        target: ports.LP01
+        value: empty
+      - delay_ms: 1200
+        type: event
+        ceid: TRANSFER_COMPLETED
+  - name: reject when blocked
+    enabled: true
+    match:
+      stream: 2
+      function: 41
+      rcmd: TRANSFER
+    conditions:
+      - field: ports.LP01
+        value: blocked
+    reply:
+      stream: 2
+      function: 42
+      ack: 3
+  - name: carrier locate
+    enabled: false
+    match:
+      stream: 2
+      function: 41
+      rcmd: LOCATE
+    reply:
+      stream: 2
+      function: 42
+      ack: 0
+    events:
+      - delay_ms: 200
+        type: event
+        ceid: LOCATE_COMPLETE

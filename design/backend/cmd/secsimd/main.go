@@ -14,7 +14,11 @@ import (
 
 func main() {
 	addr := envOrDefault("SECSIM_ADDR", ":8080")
-	state := store.New()
+	configPath := defaultConfigPath()
+	state, err := store.NewFromFile(configPath)
+	if err != nil {
+		log.Fatalf("load config %s: %v", configPath, err)
+	}
 
 	mux := http.NewServeMux()
 	api.Register(mux, state)
@@ -83,4 +87,25 @@ func envOrDefault(key string, fallback string) string {
 	}
 
 	return value
+}
+
+func defaultConfigPath() string {
+	if envPath := os.Getenv("SECSIM_CONFIG_FILE"); envPath != "" {
+		return envPath
+	}
+
+	candidates := make([]string, 0, 3)
+	if executablePath, err := os.Executable(); err == nil {
+		executableDir := filepath.Dir(executablePath)
+		candidates = append(candidates, filepath.Join(executableDir, "stocker-sim.yaml"))
+	}
+	candidates = append(candidates, "stocker-sim.yaml")
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+
+	return "stocker-sim.yaml"
 }

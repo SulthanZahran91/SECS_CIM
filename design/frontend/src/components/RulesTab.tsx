@@ -146,17 +146,15 @@ function RuleCard({
     <article className={`rule-card ${expanded ? "expanded" : ""} ${rule.enabled ? "" : "disabled"}`}>
       <div className="rule-header" onClick={onToggle} role="button" tabIndex={0}>
         <span className={`rule-chevron ${expanded ? "open" : ""}`}>▶</span>
-        <div
-          onClick={(event) => {
-            event.stopPropagation();
+        <TogglePill
+          checked={rule.enabled}
+          onToggle={() =>
             updateRule({
               ...rule,
               enabled: !rule.enabled,
-            });
-          }}
-        >
-          <TogglePill checked={rule.enabled} onToggle={() => undefined} />
-        </div>
+            })
+          }
+        />
         <Badge tone="yellow">
           S{rule.match.stream}F{rule.match.function}
         </Badge>
@@ -179,13 +177,13 @@ function RuleCard({
                     name: value,
                   })
                 }
-                width={260}
+                width="100%"
               />
             </div>
           </section>
 
           <section className="rule-section">
-            <div className="rule-section-title">When Received</div>
+            <div className="rule-section-title">Match When Received</div>
             <div className="field-row">
               <LabeledInput
                 label="Stream"
@@ -196,7 +194,7 @@ function RuleCard({
                     match: { ...rule.match, stream: toNumber(value) },
                   })
                 }
-                width={64}
+                width={70}
                 type="number"
                 mono
                 min={0}
@@ -211,14 +209,14 @@ function RuleCard({
                     match: { ...rule.match, function: toNumber(value) },
                   })
                 }
-                width={72}
+                width={80}
                 type="number"
                 mono
                 min={0}
                 max={255}
               />
               <LabeledInput
-                label="RCMD"
+                label="Remote CMD (RCMD)"
                 value={rule.match.rcmd}
                 onChange={(value) =>
                   updateRule({
@@ -226,7 +224,7 @@ function RuleCard({
                     match: { ...rule.match, rcmd: value },
                   })
                 }
-                width={160}
+                width="100%"
                 mono
               />
             </div>
@@ -248,25 +246,33 @@ function RuleCard({
               <div className="stack-list">
                 {rule.conditions.map((condition, index) => (
                   <div className="condition-row" key={`${rule.id}-condition-${index}`}>
-                    <input
-                      className="inline-input mono"
-                      value={condition.field}
-                      onChange={(event) => {
-                        const nextConditions = [...rule.conditions];
-                        nextConditions[index] = { ...condition, field: event.target.value };
-                        updateConditions(nextConditions);
-                      }}
-                    />
+                    <div className="field-group" style={{ flex: 1 }}>
+                      <span className="field-label">Field</span>
+                      <input
+                        className="field-input mono"
+                        value={condition.field}
+                        onChange={(event) => {
+                          const nextConditions = [...rule.conditions];
+                          nextConditions[index] = { ...condition, field: event.target.value };
+                          updateConditions(nextConditions);
+                        }}
+                        placeholder="e.g. DATA.RCMD"
+                      />
+                    </div>
                     <span className="condition-equals">=</span>
-                    <input
-                      className="inline-input"
-                      value={condition.value}
-                      onChange={(event) => {
-                        const nextConditions = [...rule.conditions];
-                        nextConditions[index] = { ...condition, value: event.target.value };
-                        updateConditions(nextConditions);
-                      }}
-                    />
+                    <div className="field-group" style={{ flex: 1 }}>
+                      <span className="field-label">Value</span>
+                      <input
+                        className="field-input"
+                        value={condition.value}
+                        onChange={(event) => {
+                          const nextConditions = [...rule.conditions];
+                          nextConditions[index] = { ...condition, value: event.target.value };
+                          updateConditions(nextConditions);
+                        }}
+                        placeholder="Expected value"
+                      />
+                    </div>
                     <button
                       className="icon-button danger"
                       onClick={() => {
@@ -274,6 +280,7 @@ function RuleCard({
                         updateConditions(nextConditions);
                       }}
                       type="button"
+                      style={{ marginTop: 20 }}
                     >
                       ×
                     </button>
@@ -295,7 +302,7 @@ function RuleCard({
                     reply: { ...rule.reply, stream: toNumber(value) },
                   })
                 }
-                width={64}
+                width={70}
                 type="number"
                 mono
               />
@@ -308,12 +315,12 @@ function RuleCard({
                     reply: { ...rule.reply, function: toNumber(value) },
                   })
                 }
-                width={72}
+                width={80}
                 type="number"
                 mono
               />
               <LabeledInput
-                label="ACK"
+                label="ACK Code"
                 value={rule.reply.ack}
                 onChange={(value) =>
                   updateRule({
@@ -321,7 +328,7 @@ function RuleCard({
                     reply: { ...rule.reply, ack: toNumber(value) },
                   })
                 }
-                width={72}
+                width={90}
                 type="number"
                 mono
                 hint={rule.reply.ack === 0 ? "success" : "reject"}
@@ -331,7 +338,7 @@ function RuleCard({
 
           <section className="rule-section">
             <div className="rule-section-header">
-              <div className="rule-section-title">Then Do</div>
+              <div className="rule-section-title">Then Side Effects</div>
               <div className="button-row">
                 <ActionButton variant="accent" onClick={() => updateActions([...rule.actions, createAction("event")])}>
                   + Event
@@ -340,7 +347,7 @@ function RuleCard({
                   variant="accent"
                   onClick={() => updateActions([...rule.actions, createAction("mutate")])}
                 >
-                  + Mutation
+                  + Mutate
                 </ActionButton>
               </div>
             </div>
@@ -353,7 +360,7 @@ function RuleCard({
                     <div className={`timeline-dot ${action.type}`} />
                     <div className="timeline-delay">+{action.delayMs}ms</div>
                     <div className="timeline-editor">
-                      <div className="field-row compact">
+                      <div className="field-row compact" style={{ flexWrap: "wrap" }}>
                         <LabeledSelect
                           label="Type"
                           value={action.type}
@@ -364,10 +371,10 @@ function RuleCard({
                             updateActions(nextActions);
                           }}
                           options={["event", "mutate"]}
-                          width={120}
+                          width={100}
                         />
                         <LabeledInput
-                          label="Delay"
+                          label="Delay (ms)"
                           value={action.delayMs}
                           onChange={(value) => {
                             const nextActions = rule.actions.map((item) =>
@@ -375,10 +382,9 @@ function RuleCard({
                             );
                             updateActions(nextActions);
                           }}
-                          width={100}
+                          width={90}
                           type="number"
                           mono
-                          hint="milliseconds"
                         />
                         {action.type === "event" ? (
                           <LabeledInput
@@ -390,13 +396,13 @@ function RuleCard({
                               );
                               updateActions(nextActions);
                             }}
-                            width={220}
+                            width={160}
                             mono
                           />
                         ) : (
                           <>
                             <LabeledInput
-                              label="Target"
+                              label="Target Path"
                               value={action.target ?? ""}
                               onChange={(value) => {
                                 const nextActions = rule.actions.map((item) =>
@@ -404,11 +410,11 @@ function RuleCard({
                                 );
                                 updateActions(nextActions);
                               }}
-                              width={220}
+                              width={180}
                               mono
                             />
                             <LabeledInput
-                              label="Value"
+                              label="New Value"
                               value={action.value ?? ""}
                               onChange={(value) => {
                                 const nextActions = rule.actions.map((item) =>
@@ -416,7 +422,7 @@ function RuleCard({
                                 );
                                 updateActions(nextActions);
                               }}
-                              width={180}
+                              width={140}
                             />
                           </>
                         )}
@@ -426,6 +432,7 @@ function RuleCard({
                       className="icon-button danger"
                       onClick={() => updateActions(rule.actions.filter((item) => item.id !== action.id))}
                       type="button"
+                      style={{ marginTop: 22 }}
                     >
                       ×
                     </button>
@@ -435,13 +442,13 @@ function RuleCard({
             )}
           </section>
 
-          <div className="button-row spread">
+          <div className="button-row spread" style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
             <div className="button-row">
               <ActionButton variant="neutral" onClick={onMoveUp}>
-                ↑ Move
+                ↑ Up
               </ActionButton>
               <ActionButton variant="neutral" onClick={onMoveDown}>
-                ↓ Move
+                ↓ Down
               </ActionButton>
             </div>
             <div className="button-row">
@@ -457,7 +464,7 @@ function RuleCard({
             </div>
           </div>
 
-          <div className="meta-note">{isFirst ? "First-match priority: highest" : isLast ? "Last fallback rule" : "Matched in list order"}</div>
+          <div className="meta-note" style={{ marginTop: 12 }}>{isFirst ? "Priority: Highest" : isLast ? "Priority: Lowest (Fallback)" : "Matched in order"}</div>
         </div>
       ) : null}
     </article>

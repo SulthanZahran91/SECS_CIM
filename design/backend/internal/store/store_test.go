@@ -2,10 +2,29 @@ package store
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"secsim/design/backend/internal/model"
 )
+
+func newFileBackedStore(t *testing.T) (*Store, string) {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "stocker-sim.yaml")
+	if err := writeSnapshotToYAML(path, seedSnapshot()); err != nil {
+		t.Fatalf("seed config file: %v", err)
+	}
+
+	store, err := NewFromFile(path)
+	if err != nil {
+		t.Fatalf("create file-backed store: %v", err)
+	}
+
+	return store, path
+}
 
 func TestNewRuleMarksConfigDirty(t *testing.T) {
 	store := New()
@@ -22,20 +41,34 @@ func TestNewRuleMarksConfigDirty(t *testing.T) {
 }
 
 func TestSaveAndReloadRestoresBaseline(t *testing.T) {
-	store := New()
+	store, path := newFileBackedStore(t)
 
 	snapshot := store.NewRule()
 	if !snapshot.Runtime.Dirty {
 		t.Fatalf("expected dirty snapshot")
 	}
 
-	snapshot = store.Save()
+	snapshot, err := store.Save()
+	if err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
 	if snapshot.Runtime.Dirty {
 		t.Fatalf("expected save to clear dirty flag")
 	}
 
+	fileContents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if !strings.Contains(string(fileContents), "new rule") {
+		t.Fatalf("expected saved config to include new rule, got:\n%s", string(fileContents))
+	}
+
 	store.NewRule()
-	snapshot = store.Reload()
+	snapshot, err = store.Reload()
+	if err != nil {
+		t.Fatalf("reload snapshot: %v", err)
+	}
 	if len(snapshot.Rules) != 4 {
 		t.Fatalf("expected reload to restore baseline rule count, got %d", len(snapshot.Rules))
 	}
@@ -125,13 +158,64 @@ func TestDuplicateRuleCreatesDistinctRuleAndActionIDs(t *testing.T) {
 }
 
 func TestReloadRestoresBaselineButKeepsRuntimeState(t *testing.T) {
-	store := New()
+	store, path := newFileBackedStore(t)
 
 	store.ToggleRuntime()
 	store.NewRule()
 	store.ClearLog()
 
-	snapshot := store.Reload()
+	if err := os.WriteFile(path, []byte(`
+hsms:
+  mode: active
+  ip: "127.0.0.1"
+  port: 6000
+  session_id: 9
+  device_id: 7
+  timers:
+    t3: 30
+    t5: 9
+    t6: 4
+    t7: 11
+    t8: 6
+device:
+  name: stocker-B
+  protocol: e87
+  mdln: STOCKER-SIM-B
+  softrev: 2.0.0
+handshake:
+  auto_s1f13: false
+  auto_s1f1: true
+  auto_s2f25: true
+initial_state:
+  mode: online-local
+  ports:
+    LP09: occupied
+  carriers:
+    CARR009:
+      location: LP09
+rules:
+  - name: file rule
+    enabled: true
+    match:
+      stream: 2
+      function: 41
+      rcmd: TRANSFER
+    reply:
+      stream: 2
+      function: 42
+      ack: 1
+    events:
+      - delay_ms: 50
+        type: event
+        ceid: FILE_EVENT
+`), 0o644); err != nil {
+		t.Fatalf("overwrite config file: %v", err)
+	}
+
+	snapshot, err := store.Reload()
+	if err != nil {
+		t.Fatalf("reload snapshot: %v", err)
+	}
 
 	if snapshot.Runtime.Listening {
 		t.Fatalf("expected runtime listening state to be preserved as false")
@@ -141,12 +225,20 @@ func TestReloadRestoresBaselineButKeepsRuntimeState(t *testing.T) {
 		t.Fatalf("expected HSMS state to be preserved, got %q", snapshot.Runtime.HSMSState)
 	}
 
-	if len(snapshot.Rules) != 3 {
-		t.Fatalf("expected baseline rules to be restored, got %d", len(snapshot.Rules))
+	if snapshot.HSMS.Mode != "active" || snapshot.HSMS.Port != 6000 {
+		t.Fatalf("expected HSMS settings to reload from disk, got %#v", snapshot.HSMS)
 	}
 
-	if len(snapshot.Messages) != 7 {
-		t.Fatalf("expected baseline messages to be restored, got %d", len(snapshot.Messages))
+	if snapshot.Device.Name != "stocker-B" {
+		t.Fatalf("expected device config to reload from disk, got %#v", snapshot.Device)
+	}
+
+	if len(snapshot.Rules) != 1 || snapshot.Rules[0].Name != "file rule" {
+		t.Fatalf("expected rules to reload from disk, got %#v", snapshot.Rules)
+	}
+
+	if len(snapshot.Messages) != 0 {
+		t.Fatalf("expected message log to be preserved, got %d messages", len(snapshot.Messages))
 	}
 }
 
@@ -156,5 +248,111 @@ func TestDeleteRuleReturnsNotFoundForUnknownID(t *testing.T) {
 	_, err := store.DeleteRule("missing")
 	if !errors.Is(err, ErrRuleNotFound) {
 		t.Fatalf("expected ErrRuleNotFound, got %v", err)
+	}
+}
+
+func TestDirtyTrackingClearsWhenConfigMatchesBaselineAgain(t *testing.T) {
+	store := New()
+
+	baseline := store.Snapshot().Device
+	changed := baseline
+	changed.Name = "different"
+
+	snapshot := store.UpdateDevice(changed)
+	if !snapshot.Runtime.Dirty {
+		t.Fatalf("expected dirty after changing device config")
+	}
+
+	snapshot = store.UpdateDevice(baseline)
+	if snapshot.Runtime.Dirty {
+		t.Fatalf("expected dirty flag to clear once config matches baseline again")
+	}
+}
+
+func TestNewFromFileLoadsYAMLConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sim.yaml")
+	if err := os.WriteFile(path, []byte(`
+hsms:
+  mode: active
+  ip: "10.0.0.9"
+  port: 7000
+  session_id: 13
+  device_id: 3
+  timers:
+    t3: 33
+    t5: 8
+    t6: 4
+    t7: 12
+    t8: 6
+device:
+  name: load-test
+  protocol: e88
+  mdln: LOAD-SIM
+  softrev: 9.9.9
+handshake:
+  auto_s1f13: false
+  auto_s1f1: false
+  auto_s2f25: true
+initial_state:
+  mode: online-local
+  ports:
+    LP01: empty
+  carriers: {}
+rules:
+  - name: yaml rule
+    match:
+      stream: 1
+      function: 1
+      rcmd: STATUS
+    reply:
+      stream: 1
+      function: 2
+      ack: 0
+    events:
+      - delay_ms: 10
+        type: event
+        ceid: READY
+`), 0o644); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	store, err := NewFromFile(path)
+	if err != nil {
+		t.Fatalf("create store from file: %v", err)
+	}
+
+	snapshot := store.Snapshot()
+	if snapshot.Runtime.ConfigFile != path {
+		t.Fatalf("expected config file path %q, got %q", path, snapshot.Runtime.ConfigFile)
+	}
+	if snapshot.HSMS.Mode != "active" || snapshot.HSMS.IP != "10.0.0.9" {
+		t.Fatalf("expected HSMS config from file, got %#v", snapshot.HSMS)
+	}
+	if !snapshot.HSMS.Handshake.AutoS2F25 || snapshot.HSMS.Handshake.AutoS1F13 {
+		t.Fatalf("expected handshake config from file, got %#v", snapshot.HSMS.Handshake)
+	}
+	if len(snapshot.Rules) != 1 || snapshot.Rules[0].ID != "rule-1" {
+		t.Fatalf("expected file rules to load with generated IDs, got %#v", snapshot.Rules)
+	}
+	if len(snapshot.Rules[0].Actions) != 1 || snapshot.Rules[0].Actions[0].ID != "action-1" {
+		t.Fatalf("expected file actions to load with generated IDs, got %#v", snapshot.Rules[0].Actions)
+	}
+}
+
+func TestReloadReturnsErrorAndKeepsCurrentConfigWhenYAMLIsInvalid(t *testing.T) {
+	store, path := newFileBackedStore(t)
+	baseline := store.Snapshot()
+
+	if err := os.WriteFile(path, []byte("rules:\n  - name: broken\n    extra: ["), 0o644); err != nil {
+		t.Fatalf("write invalid config file: %v", err)
+	}
+
+	if _, err := store.Reload(); !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("expected ErrInvalidConfig, got %v", err)
+	}
+
+	current := store.Snapshot()
+	if !configEquals(current, baseline) {
+		t.Fatalf("expected current config to remain unchanged after failed reload")
 	}
 }

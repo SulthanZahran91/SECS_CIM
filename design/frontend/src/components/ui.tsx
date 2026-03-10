@@ -49,6 +49,7 @@ interface ActionButtonProps {
   children: ReactNode;
   onClick: () => void;
   variant?: "neutral" | "accent" | "danger" | "warning";
+  className?: string;
 }
 
 export function Badge({ tone, children }: BadgeProps) {
@@ -58,8 +59,8 @@ export function Badge({ tone, children }: BadgeProps) {
 export function SectionHeader({ children, right }: SectionHeaderProps) {
   return (
     <div className="section-header">
-      <span>{children}</span>
-      {right ? <div>{right}</div> : null}
+      <span className="section-title">{children}</span>
+      {right ? <div className="section-actions">{right}</div> : null}
     </div>
   );
 }
@@ -68,7 +69,7 @@ export function TabButton({ active, children, icon, onClick }: TabButtonProps) {
   return (
     <button className={`tab-button ${active ? "active" : ""}`} onClick={onClick} type="button">
       {icon ? <span className="tab-icon">{icon}</span> : null}
-      <span>{children}</span>
+      <span className="tab-label">{children}</span>
     </button>
   );
 }
@@ -94,6 +95,7 @@ export function LabeledInput({
         type={type}
         min={min}
         max={max}
+        spellCheck={false}
       />
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
@@ -110,13 +112,15 @@ export function LabeledSelect({
   return (
     <label className="field-group" style={width ? { width } : undefined}>
       <span className="field-label">{label}</span>
-      <select className="field-input" value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+      <div className="select-wrapper">
+        <select className="field-input" value={value} onChange={(event) => onChange(event.target.value)}>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
     </label>
   );
 }
@@ -125,7 +129,10 @@ export function TogglePill({ checked, onToggle, disabled }: TogglePillProps) {
   return (
     <button
       className={`toggle-pill ${checked ? "checked" : ""}`}
-      onClick={onToggle}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
       type="button"
       disabled={disabled}
       aria-pressed={checked}
@@ -135,11 +142,10 @@ export function TogglePill({ checked, onToggle, disabled }: TogglePillProps) {
   );
 }
 
-export function ActionButton({ children, onClick, variant = "neutral" }: ActionButtonProps) {
+export function ActionButton({ children, onClick, variant = "neutral", className = "" }: ActionButtonProps) {
   return (
-    <button className={`action-button ${variant}`} onClick={onClick} type="button">
+    <button className={`action-button ${variant} ${className}`} onClick={onClick} type="button">
       {children}
     </button>
   );
 }
-
