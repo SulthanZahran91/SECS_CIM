@@ -3,9 +3,11 @@ package sim
 import (
 	"context"
 	"errors"
+	"log"
 	"sync"
 	"time"
 
+	"secsim/design/backend/internal/hsms"
 	"secsim/design/backend/internal/model"
 	"secsim/design/backend/internal/store"
 )
@@ -13,9 +15,10 @@ import (
 var ErrNotRunning = errors.New("simulator is not running")
 
 type Controller struct {
-	store  *store.Store
-	mu     sync.Mutex
-	cancel context.CancelFunc
+	store     *store.Store
+	mu        sync.Mutex
+	cancel    context.CancelFunc
+	transport *hsms.Manager
 }
 
 type Status struct {
@@ -32,23 +35,44 @@ func New(state *store.Store) *Controller {
 
 func (c *Controller) Start() (model.Snapshot, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if c.cancel != nil {
-		return c.store.Snapshot(), nil
+		snapshot := c.store.Snapshot()
+		c.mu.Unlock()
+		return snapshot, nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	transport := hsms.NewManager(c.store.ConfigSnapshot().HSMS, hsms.Handlers{
+		OnData:        c.handleDataMessage,
+		OnStateChange: c.updateRuntimeState,
+		OnError: func(err error) {
+			log.Printf("HSMS runtime error: %v", err)
+		},
+	})
 	c.cancel = cancel
+	c.transport = transport
+	c.mu.Unlock()
+
+	c.store.SetRuntime(true, "NOT CONNECTED")
+
+	if err := transport.Start(ctx); err != nil {
+		cancel()
+		c.mu.Lock()
+		c.cancel = nil
+		c.transport = nil
+		c.mu.Unlock()
+		return c.store.SetRuntime(false, "NOT CONNECTED"), err
+	}
 	go c.schedulerLoop(ctx)
 
-	return c.store.SetRuntime(true, "NOT CONNECTED"), nil
+	return c.store.Snapshot(), nil
 }
 
 func (c *Controller) Stop() model.Snapshot {
 	c.mu.Lock()
 	cancel := c.cancel
 	c.cancel = nil
+	c.transport = nil
 	c.mu.Unlock()
 
 	if cancel != nil {
@@ -112,7 +136,142 @@ func (c *Controller) schedulerLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			_, _ = c.store.RunScheduled(now)
+			result, err := c.store.RunScheduled(now)
+			if err != nil {
+				log.Printf("runtime scheduler error: %v", err)
+				continue
+			}
+			c.sendScheduledMessages(result)
 		}
+	}
+}
+
+func (c *Controller) updateRuntimeState(state string) {
+	c.mu.Lock()
+	running := c.cancel != nil
+	c.mu.Unlock()
+
+	c.store.SetRuntime(running, state)
+}
+
+func (c *Controller) currentTransport() *hsms.Manager {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.transport
+}
+
+func (c *Controller) handleDataMessage(message hsms.Message) ([]hsms.Message, error) {
+	now := time.Now().UTC()
+	config := c.store.ConfigSnapshot()
+	inbound := inboundMessageFromHSMS(message, now)
+
+	if response, ok := autoResponseForMessage(config, message); ok {
+		c.store.ProcessInbound(inbound, now)
+		c.appendProtocolMessage(now, "OUT", response, "", "")
+		return []hsms.Message{response}, nil
+	}
+
+	result := c.store.ProcessInbound(inbound, now)
+	response, ok, err := c.replyForResult(config, message, result)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	return []hsms.Message{response}, nil
+}
+
+func (c *Controller) replyForResult(config model.Snapshot, inbound hsms.Message, result store.RuntimeResult) (hsms.Message, bool, error) {
+	if result.Reply == nil {
+		return hsms.Message{}, false, nil
+	}
+
+	var matchedRule *model.Rule
+	for index := range config.Rules {
+		if config.Rules[index].ID == result.MatchedRuleID {
+			matchedRule = &config.Rules[index]
+			break
+		}
+	}
+	if matchedRule == nil {
+		return hsms.Message{}, false, errors.New("matched rule not found for outbound reply")
+	}
+
+	body := hsms.List(hsms.Binary(byte(matchedRule.Reply.Ack)), hsms.List())
+	return hsms.Message{
+		SessionID:   uint16(config.HSMS.SessionID),
+		Stream:      byte(matchedRule.Reply.Stream),
+		Function:    byte(matchedRule.Reply.Function),
+		WBit:        false,
+		SystemBytes: inbound.SystemBytes,
+		Body:        &body,
+	}, true, nil
+}
+
+func (c *Controller) sendScheduledMessages(result store.RuntimeResult) {
+	transport := c.currentTransport()
+	if transport == nil {
+		return
+	}
+
+	config := result.Snapshot
+	for _, record := range result.Emitted {
+		if record.Detail.Stream != 6 || record.Detail.Function != 11 {
+			continue
+		}
+
+		message := hsms.BuildS6F11(uint16(config.HSMS.SessionID), 0, record.Label)
+		if err := transport.Send(message); err != nil && !errors.Is(err, hsms.ErrNoSelectedSession) {
+			log.Printf("send scheduled message %s: %v", record.SF, err)
+		}
+	}
+}
+
+func (c *Controller) appendProtocolMessage(timestamp time.Time, direction string, message hsms.Message, matchedRule string, matchedRuleID string) {
+	c.store.AppendProtocolMessage(store.ProtocolMessage{
+		Timestamp:     timestamp,
+		Direction:     direction,
+		Stream:        int(message.Stream),
+		Function:      int(message.Function),
+		WBit:          message.WBit,
+		Label:         message.Label(),
+		Body:          message.BodySML(),
+		RawSML:        message.RawSML(),
+		MatchedRule:   matchedRule,
+		MatchedRuleID: matchedRuleID,
+	})
+}
+
+func inboundMessageFromHSMS(message hsms.Message, timestamp time.Time) store.InboundMessage {
+	inbound := store.InboundMessage{
+		Timestamp: timestamp,
+		Stream:    int(message.Stream),
+		Function:  int(message.Function),
+		WBit:      message.WBit,
+		Label:     message.Label(),
+		Body:      message.BodySML(),
+		RawSML:    message.RawSML(),
+	}
+
+	if rcmd, fields, ok := hsms.ExtractRemoteCommand(message); ok {
+		inbound.RCMD = rcmd
+		inbound.Fields = fields
+	}
+
+	return inbound
+}
+
+func autoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.Message, bool) {
+	switch {
+	case message.Stream == 1 && message.Function == 13 && config.HSMS.Handshake.AutoS1F13:
+		return hsms.BuildS1F14(uint16(config.HSMS.SessionID), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
+	case message.Stream == 1 && message.Function == 1 && config.HSMS.Handshake.AutoS1F1:
+		return hsms.BuildS1F2(uint16(config.HSMS.SessionID), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
+	case message.Stream == 2 && message.Function == 25 && config.HSMS.Handshake.AutoS2F25:
+		return hsms.BuildS2F26(uint16(config.HSMS.SessionID), message.SystemBytes, message.Body), true
+	default:
+		return hsms.Message{}, false
 	}
 }

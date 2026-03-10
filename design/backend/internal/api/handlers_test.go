@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -119,6 +120,18 @@ func decodeSSESnapshot(t *testing.T, reader *bufio.Reader) model.Snapshot {
 		t.Fatal("timed out waiting for SSE snapshot")
 		return model.Snapshot{}
 	}
+}
+
+func freePort(t *testing.T) int {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve test port: %v", err)
+	}
+	defer listener.Close()
+
+	return listener.Addr().(*net.TCPAddr).Port
 }
 
 func TestHealthEndpointReturnsJSONAndCORSHeaders(t *testing.T) {
@@ -327,7 +340,13 @@ func TestReloadEndpointReturnsValidationErrorsForInvalidYAML(t *testing.T) {
 }
 
 func TestSimLifecycleAndInjectEndpoints(t *testing.T) {
-	mux := newTestMux()
+	state := store.New()
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = freePort(t)
+	state.UpdateHSMS(hsmsConfig)
+
+	mux := newTestMuxWithStore(state)
 
 	statusBefore := doRequest(t, mux, http.MethodGet, "/api/sim/status", nil)
 	if statusBefore.Code != http.StatusOK {
@@ -342,8 +361,8 @@ func TestSimLifecycleAndInjectEndpoints(t *testing.T) {
 		t.Fatalf("expected 200 from start, got %d", startRecorder.Code)
 	}
 	started := decodeSnapshot(t, startRecorder)
-	if !started.Runtime.Listening || started.Runtime.HSMSState != "NOT CONNECTED" {
-		t.Fatalf("expected simulator to start in listening/not-connected state, got %#v", started.Runtime)
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "LISTENING" {
+		t.Fatalf("expected simulator to start in listening state, got %#v", started.Runtime)
 	}
 
 	injectRecorder := doRequest(t, mux, http.MethodPost, "/api/sim/inject", map[string]any{

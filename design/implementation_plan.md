@@ -11,7 +11,8 @@ Current reality:
 - The repository contains a working TSX + Go scaffold.
 - The UI shell, API surface, tests, and packaging flow exist.
 - File-backed config persistence, backend rule/runtime execution, and live frontend runtime subscriptions now exist.
-- Real HSMS transport and SECS-II codec support are not implemented yet.
+- Real HSMS transport now exists, and a minimal SECS-II codec/message pipeline is wired into the live runtime.
+- Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 
 The design references remain:
 
@@ -32,9 +33,9 @@ The design references remain:
 | 0. Scaffold Baseline | Completed | TSX frontend, Go API, docs, packaging, and test harness exist |
 | 1. Config + Persistence | Completed | Backend now boots from YAML, saves atomically to disk, and reloads file-backed state |
 | 2. Rule Engine + State Mutations | Completed | Decoded inbound runtime messages can match rules, emit replies/events, mutate live state, and stream live snapshots to the UI |
-| 3. HSMS Transport | Pending | No real listener/client/session implementation exists |
-| 4. SECS-II Codec + Message Pipeline | Pending | No real frame parsing, encoding, or live pipeline exists |
-| 5. Live UI Integration | Partial | UI now follows live backend runtime snapshots, but it is still waiting on real HSMS traffic and remaining monitor polish |
+| 3. HSMS Transport | Completed | Real passive/active HSMS runtime now starts, stops, tracks session state, and handles core control traffic |
+| 4. SECS-II Codec + Message Pipeline | Completed | Frames and a minimal supported SECS-II item set are encoded/decoded, logged, auto-responded, and fed into the rule engine |
+| 5. Live UI Integration | Partial | UI now reflects real HSMS session traffic, but runtime-error surfacing and monitor polish are still incomplete |
 | 6. Packaging + Acceptance | Partial | Air-gapped packaging exists, but only for the scaffolded runtime |
 
 ## Completed Work
@@ -116,20 +117,25 @@ Exit criteria:
 
 ### Phase 3. HSMS Transport
 
-Status: `Pending`
+Status: `Completed`
 
-Planned:
+Done:
 
-- Add a backend `internal/hsms` package
-- Support passive listen mode
-- Support active connect mode
-- Track socket/session lifecycle
-- Implement HSMS control messages:
+- Added a backend `internal/hsms` package with real socket/session management
+- Runtime start/stop now starts and stops a real HSMS transport instead of only toggling an in-process scheduler
+- Passive listen mode now accepts host connections and transitions through live session states
+- Active connect mode now dials the configured peer, sends `Select.req`, and retries on disconnect
+- Core HSMS control handling now exists for:
   - `Select.req` / `Select.rsp`
   - `Deselect.req` / `Deselect.rsp`
   - `Linktest.req` / `Linktest.rsp`
   - `Separate.req`
-- Honor configured port, IP, session ID, device ID, and timers
+- Session state changes now update the shared runtime snapshot so the status bar reflects actual transport state
+- The runtime now applies configured address, port, session ID, and basic T5/T6/T7/T8 timer behavior
+
+Remaining:
+
+- None for the current Phase 3 exit criteria
 
 Exit criteria:
 
@@ -138,18 +144,31 @@ Exit criteria:
 
 ### Phase 4. SECS-II Codec and Message Pipeline
 
-Status: `Pending`
+Status: `Completed`
 
-Planned:
+Done:
 
-- Encode/decode HSMS frames
-- Encode/decode SECS-II headers and body items
-- Parse inbound messages into internal message records
-- Render decoded and raw SML from live traffic
-- Implement auto-response behavior for:
+- HSMS frame read/write support now exists with real 10-byte headers and system bytes
+- A minimal SECS-II item codec now exists for the currently used item types:
+  - `L`
+  - `B`
+  - `BOOLEAN`
+  - `A`
+  - `U1`
+  - `U4`
+- Inbound live traffic is now decoded into internal runtime messages instead of relying only on the decoded injection path
+- The backend now renders both pretty and raw SML strings from live protocol bodies for the monitor
+- `S2F41` remote-command messages are now decoded into `RCMD` plus named parameter fields for rule matching
+- Auto-response behavior now exists for:
   - `S1F13` / `S1F14`
   - `S1F1` / `S1F2`
   - `S2F25` / `S2F26`
+- Rule-driven `S2F42` replies and scheduled `S6F11` events are now encoded and sent over the selected HSMS session
+- Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
+
+Remaining:
+
+- None for the current Phase 4 exit criteria
 
 Exit criteria:
 
@@ -164,10 +183,10 @@ Done:
 - UI layout and editor flows are implemented
 - Message detail pane, matched-rule view, and status bar exist
 - Frontend bootstrap and runtime views now follow live backend snapshot updates over the event stream
+- The live monitor now updates from real HSMS session traffic, including protocol auto-responses, rule replies, and scheduled events
 
 Remaining:
 
-- Drive the live monitor from real HSMS session traffic instead of the current decoded runtime injection path
 - Surface runtime errors and connection loss clearly
 - Add monitor auto-scroll behavior and other sustained-traffic polish against live sessions
 
@@ -200,18 +219,18 @@ Exit criteria:
 
 The biggest missing pieces are:
 
-1. Real HSMS socket/session handling
-2. Real SECS-II encode/decode
-3. Wiring protocol-decoded live traffic into the existing runtime controller instead of the current decoded injection path
-4. End-to-end acceptance coverage for live protocol sessions
+1. Broader SECS-II/message coverage beyond the current handshake, remote-command, loopback, and event paths
+2. Clear UI surfacing for transport errors, disconnects, and sustained-traffic behavior
+3. More protocol-level acceptance coverage for active mode, reconnects, and additional control/data edge cases
+4. Packaged Windows validation and offline rebuild confirmation for the real protocol runtime
 
 ## Recommended Next Step
 
-Implement the transport integration path next:
+Expand coverage around the real protocol runtime:
 
-1. Add an `internal/hsms` session/connection layer
-2. Feed decoded frames into the completed Phase 2 runtime controller
-3. Wire standard auto-responses alongside rule-driven replies
-4. Add protocol-level acceptance tests around a simulated command flow
+1. Add the next set of SECS-II message/body shapes needed for the target host scenarios
+2. Add protocol acceptance tests for active-mode connect/select, disconnect/reconnect, and control-message edge cases
+3. Surface runtime transport failures more explicitly in the UI and status area
+4. Validate the packaged Windows build against a clean-host live-session smoke test
 
-That connects the completed Phase 2 runtime core to real protocol traffic.
+That moves the repo from “real transport exists” to “real transport is scenario-complete and release-validated.”
