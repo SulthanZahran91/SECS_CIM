@@ -3,6 +3,7 @@
 Build a Windows package that contains:
 
 - the Go backend executable
+- the default `stocker-sim.yaml` config file
 - the built TSX frontend under `web/dist`
 - helper scripts for offline startup
 
@@ -42,13 +43,14 @@ The script writes to `design/dist/` by default and creates:
 ```text
 secsim-airgapped-YYYYMMDD/
 ├── secsim.exe
+├── stocker-sim.yaml
 ├── start.bat
 ├── README.txt
 └── web/
     └── dist/
 ```
 
-`secsim.exe` automatically looks for frontend assets in `web/dist` next to the executable. You can also override this with `SECSIM_WEB_DIST`.
+`start.bat` points `SECSIM_CONFIG_FILE` at `stocker-sim.yaml` next to the executable. `secsim.exe` automatically looks for frontend assets in `web/dist` next to the executable. You can also override these with `SECSIM_CONFIG_FILE` and `SECSIM_WEB_DIST`.
 
 ## Offline Notes
 
@@ -64,7 +66,7 @@ Offline build machine:
 
 ## Runtime
 
-`start.bat` sets `SECSIM_ADDR` to the selected port if it is not already defined, then starts `secsim.exe`.
+`start.bat` sets `SECSIM_ADDR` to the selected port and `SECSIM_CONFIG_FILE` to the packaged `stocker-sim.yaml` if they are not already defined, then starts `secsim.exe`.
 
 Default URL:
 

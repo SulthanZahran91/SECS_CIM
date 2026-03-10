@@ -20,6 +20,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config %s: %v", configPath, err)
 	}
+	if err := ensureConfigFile(state, configPath); err != nil {
+		log.Fatalf("initialize config %s: %v", configPath, err)
+	}
 	simulator := sim.New(state)
 
 	mux := http.NewServeMux()
@@ -110,4 +113,23 @@ func defaultConfigPath() string {
 	}
 
 	return "stocker-sim.yaml"
+}
+
+func ensureConfigFile(state *store.Store, configPath string) error {
+	if configPath == "" {
+		return nil
+	}
+
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if _, err := state.Save(); err != nil {
+		return err
+	}
+
+	log.Printf("Created default config at %s", configPath)
+	return nil
 }

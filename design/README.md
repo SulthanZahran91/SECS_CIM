@@ -53,3 +53,5 @@ From the repository root:
 ```
 
 The full packaging flow is documented in [BUILD_AIRGAPPED.md](/home/dev/projects/SECSIM/design/BUILD_AIRGAPPED.md).
+
+The packaged Windows folder includes `stocker-sim.yaml` next to `secsim.exe`, and the backend now creates that config automatically on first launch if it is missing.

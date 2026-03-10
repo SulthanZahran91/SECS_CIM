@@ -98,6 +98,7 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendDir = Join-Path $scriptDir "frontend"
 $backendDir = Join-Path $scriptDir "backend"
 $frontendDistDir = Join-Path $frontendDir "dist"
+$defaultConfigPath = Join-Path $backendDir "stocker-sim.yaml"
 $outputRoot = Resolve-OrCreateDirectory -BaseDir $scriptDir -Path $OutputDir
 
 Write-Status "Checking prerequisites" "Info"
@@ -137,6 +138,11 @@ if (-not $SkipFrontend) {
 if (-not (Test-Path $frontendDistDir)) {
     Write-Status "Frontend dist directory not found at $frontendDistDir" "Error"
     Write-Host "Run without -SkipFrontend to build the frontend first." -ForegroundColor Yellow
+    exit 1
+}
+
+if (-not (Test-Path $defaultConfigPath)) {
+    Write-Status "Default config file not found at $defaultConfigPath" "Error"
     exit 1
 }
 
@@ -200,6 +206,7 @@ New-Item -ItemType Directory -Path $webDistTarget -Force | Out-Null
 
 $packageBinary = Join-Path $packageDir "secsim.exe"
 Copy-Item $binaryPath $packageBinary -Force
+Copy-Item $defaultConfigPath (Join-Path $packageDir "stocker-sim.yaml") -Force
 Copy-Item -Path (Join-Path $frontendDistDir "*") -Destination $webDistTarget -Recurse -Force
 
 $startScript = @"
@@ -207,6 +214,7 @@ $startScript = @"
 setlocal
 cd /d "%~dp0"
 if "%SECSIM_ADDR%"=="" set SECSIM_ADDR=:$Port
+if "%SECSIM_CONFIG_FILE%"=="" set SECSIM_CONFIG_FILE=%~dp0stocker-sim.yaml
 title SECSIM
 echo.
 echo Starting SECSIM on http://localhost:$Port
@@ -228,18 +236,21 @@ Quick start
 Contents
 --------
 - secsim.exe        - Go backend
+- stocker-sim.yaml  - editable simulator config
 - web\dist\         - built frontend assets
 - start.bat         - launcher script
 
 Runtime knobs
 -------------
 - SECSIM_ADDR       - override bind address and port (default :$Port)
+- SECSIM_CONFIG_FILE - override simulator config path
 - SECSIM_WEB_DIST   - override frontend asset directory
 
 Notes
 -----
 This package does not require the source tree. The executable looks for
 frontend assets in web\dist next to secsim.exe unless SECSIM_WEB_DIST is set.
+start.bat points SECSIM_CONFIG_FILE at stocker-sim.yaml in the package folder.
 "@
 $readme | Out-File -FilePath (Join-Path $packageDir "README.txt") -Encoding ASCII
 

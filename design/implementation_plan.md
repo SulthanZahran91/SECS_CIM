@@ -183,10 +183,10 @@ Done:
 
 - Windows air-gapped packaging exists
 - Built frontend can be served by the backend
+- The Windows package now includes a default `stocker-sim.yaml` config next to `secsim.exe`
 
 Remaining:
 
-- Package sample YAML configs
 - Package sample scenarios or golden test fixtures
 - Add end-to-end acceptance tests for a live protocol session
 - Validate packaged behavior on a clean Windows host
