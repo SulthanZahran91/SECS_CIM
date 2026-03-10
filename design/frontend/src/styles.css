@@ -293,6 +293,13 @@ textarea {
 
 .panel-scroll {
   flex: 1;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.panel-scroll-content {
+  width: max-content;
+  min-width: 100%;
 }
 
 .section-header {
@@ -637,6 +644,12 @@ textarea {
   border-radius: 12px;
   border: 1px solid var(--border);
   min-width: 0;
+}
+
+.action-editor-row {
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: 100%;
 }
 
 .event-generator,

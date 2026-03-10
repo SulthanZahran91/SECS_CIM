@@ -81,26 +81,28 @@ export function RulesTab({
 }: RulesTabProps) {
   return (
     <div className="panel-scroll">
-      <SectionHeader right={<ActionButton variant="accent" onClick={onCreateRule}>+ New Rule</ActionButton>}>
-        {rules.length} rules
-      </SectionHeader>
-      <div className="rule-list">
-        {rules.map((rule, index) => (
-          <RuleCard
-            key={rule.id}
-            rule={rule}
-            expanded={expandedRuleId === rule.id}
-            isFirst={index === 0}
-            isLast={index === rules.length - 1}
-            onToggle={() => onToggleRule(rule.id)}
-            onChange={onChangeRule}
-            onDuplicate={() => onDuplicateRule(rule.id)}
-            onDelete={() => onDeleteRule(rule.id)}
-            onMoveUp={() => onMoveRule(rule.id, "up")}
-            onMoveDown={() => onMoveRule(rule.id, "down")}
-            onExport={() => onExportRule(rule)}
-          />
-        ))}
+      <div className="panel-scroll-content">
+        <SectionHeader right={<ActionButton variant="accent" onClick={onCreateRule}>+ New Rule</ActionButton>}>
+          {rules.length} rules
+        </SectionHeader>
+        <div className="rule-list">
+          {rules.map((rule, index) => (
+            <RuleCard
+              key={rule.id}
+              rule={rule}
+              expanded={expandedRuleId === rule.id}
+              isFirst={index === 0}
+              isLast={index === rules.length - 1}
+              onToggle={() => onToggleRule(rule.id)}
+              onChange={onChangeRule}
+              onDuplicate={() => onDuplicateRule(rule.id)}
+              onDelete={() => onDeleteRule(rule.id)}
+              onMoveUp={() => onMoveRule(rule.id, "up")}
+              onMoveDown={() => onMoveRule(rule.id, "down")}
+              onExport={() => onExportRule(rule)}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -372,7 +374,7 @@ function RuleCard({
                     <div className={`timeline-dot ${action.type}`} />
                     <div className="timeline-delay">+{action.delayMs}ms</div>
                     <div className="timeline-editor">
-                      <div className="field-row compact" style={{ flexWrap: "wrap" }}>
+                      <div className="field-row compact action-editor-row">
                         <LabeledSelect
                           label="Type"
                           value={action.type}
@@ -404,7 +406,7 @@ function RuleCard({
                               <Badge tone="yellow">{sendSummary(action)}</Badge>
                               <span className="event-generator-copy">Generic outbound SECS message</span>
                             </div>
-                            <div className="field-row compact" style={{ flexWrap: "wrap" }}>
+                            <div className="field-row compact action-editor-row">
                               <LabeledInput
                                 label="Stream"
                                 value={action.stream ?? 0}

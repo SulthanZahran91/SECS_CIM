@@ -31,6 +31,8 @@ describe("RulesTab", () => {
 
     render(<RulesTabHarness />);
 
+    expect(document.querySelector(".panel-scroll-content")).not.toBeNull();
+    expect(document.querySelectorAll(".action-editor-row")).toHaveLength(2);
     expect(screen.getByText("Generic outbound SECS message")).toBeInTheDocument();
     expect(screen.getByText("S6F11 W")).toBeInTheDocument();
     expect(screen.getByDisplayValue('L:1 <A "TRANSFER_INITIATED">')).toBeInTheDocument();
