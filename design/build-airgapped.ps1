@@ -211,7 +211,7 @@ title SECSIM
 echo.
 echo Starting SECSIM on http://localhost:$Port
 echo.
-secssim.exe
+secsim.exe
 endlocal
 "@
 $startScript | Out-File -FilePath (Join-Path $packageDir "start.bat") -Encoding ASCII

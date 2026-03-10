@@ -48,7 +48,7 @@ secsim-airgapped-YYYYMMDD/
     └── dist/
 ```
 
-`secssim.exe` automatically looks for frontend assets in `web/dist` next to the executable. You can also override this with `SECSIM_WEB_DIST`.
+`secsim.exe` automatically looks for frontend assets in `web/dist` next to the executable. You can also override this with `SECSIM_WEB_DIST`.
 
 ## Offline Notes
 
@@ -64,11 +64,10 @@ Offline build machine:
 
 ## Runtime
 
-`start.bat` sets `SECSIM_ADDR` to the selected port if it is not already defined, then starts `secssim.exe`.
+`start.bat` sets `SECSIM_ADDR` to the selected port if it is not already defined, then starts `secsim.exe`.
 
 Default URL:
 
 ```text
 http://localhost:8080
 ```
-
