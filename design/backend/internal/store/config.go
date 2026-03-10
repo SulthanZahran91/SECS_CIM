@@ -54,11 +54,22 @@ type yamlRuleReply struct {
 }
 
 type yamlRuleAction struct {
-	DelayMS int    `yaml:"delay_ms"`
-	Type    string `yaml:"type"`
-	CEID    string `yaml:"ceid,omitempty"`
-	Target  string `yaml:"target,omitempty"`
-	Value   string `yaml:"value,omitempty"`
+	DelayMS int                    `yaml:"delay_ms"`
+	Type    string                 `yaml:"type"`
+	CEID    string                 `yaml:"ceid,omitempty"`
+	Reports []yamlRuleActionReport `yaml:"reports,omitempty"`
+	Target  string                 `yaml:"target,omitempty"`
+	Value   string                 `yaml:"value,omitempty"`
+}
+
+type yamlRuleActionReport struct {
+	RPTID     string                   `yaml:"rptid,omitempty"`
+	Variables []yamlRuleActionVariable `yaml:"variables,omitempty"`
+}
+
+type yamlRuleActionVariable struct {
+	VID   string `yaml:"vid,omitempty"`
+	Value string `yaml:"value,omitempty"`
 }
 
 type yamlHandshakeConfig struct {
@@ -128,6 +139,7 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 				DelayMS: actionConfig.DelayMS,
 				Type:    actionConfig.Type,
 				CEID:    actionConfig.CEID,
+				Reports: ruleActionReportsFromYAML(actionConfig.Reports),
 				Target:  actionConfig.Target,
 				Value:   actionConfig.Value,
 			})
@@ -204,6 +216,7 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 				DelayMS: action.DelayMS,
 				Type:    action.Type,
 				CEID:    action.CEID,
+				Reports: ruleActionReportsToYAML(action.Reports),
 				Target:  action.Target,
 				Value:   action.Value,
 			})
@@ -255,6 +268,54 @@ func (r yamlRule) ruleActions() []yamlRuleAction {
 	}
 
 	return r.Actions
+}
+
+func ruleActionReportsFromYAML(src []yamlRuleActionReport) []model.RuleActionReport {
+	reports := make([]model.RuleActionReport, 0, len(src))
+	for _, report := range src {
+		reports = append(reports, model.RuleActionReport{
+			RPTID:     report.RPTID,
+			Variables: ruleActionVariablesFromYAML(report.Variables),
+		})
+	}
+
+	return reports
+}
+
+func ruleActionVariablesFromYAML(src []yamlRuleActionVariable) []model.RuleActionVariable {
+	variables := make([]model.RuleActionVariable, 0, len(src))
+	for _, variable := range src {
+		variables = append(variables, model.RuleActionVariable{
+			VID:   variable.VID,
+			Value: variable.Value,
+		})
+	}
+
+	return variables
+}
+
+func ruleActionReportsToYAML(src []model.RuleActionReport) []yamlRuleActionReport {
+	reports := make([]yamlRuleActionReport, 0, len(src))
+	for _, report := range src {
+		reports = append(reports, yamlRuleActionReport{
+			RPTID:     report.RPTID,
+			Variables: ruleActionVariablesToYAML(report.Variables),
+		})
+	}
+
+	return reports
+}
+
+func ruleActionVariablesToYAML(src []model.RuleActionVariable) []yamlRuleActionVariable {
+	variables := make([]yamlRuleActionVariable, 0, len(src))
+	for _, variable := range src {
+		variables = append(variables, yamlRuleActionVariable{
+			VID:   variable.VID,
+			Value: variable.Value,
+		})
+	}
+
+	return variables
 }
 
 func nextIdentifierValue(prefix string, ids []string) int {

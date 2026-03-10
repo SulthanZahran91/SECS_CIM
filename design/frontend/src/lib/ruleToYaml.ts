@@ -28,6 +28,22 @@ export function ruleToYaml(rule: Rule): string {
             ];
             if (action.type === "event") {
               lines.push("      ceid: " + quote(action.ceid ?? ""));
+              if ((action.reports?.length ?? 0) > 0) {
+                lines.push("      reports:");
+                for (const report of action.reports ?? []) {
+                  lines.push("        - rptid: " + quote(report.rptid ?? ""));
+                  if (report.variables.length === 0) {
+                    lines.push("          variables: []");
+                    continue;
+                  }
+
+                  lines.push("          variables:");
+                  for (const variable of report.variables) {
+                    lines.push("            - vid: " + quote(variable.vid ?? ""));
+                    lines.push("              value: " + quote(variable.value ?? ""));
+                  }
+                }
+              }
             } else {
               lines.push("      target: " + quote(action.target ?? ""));
               lines.push("      value: " + quote(action.value ?? ""));
@@ -51,4 +67,3 @@ export function ruleToYaml(rule: Rule): string {
     ...actionLines,
   ].join("\n");
 }
-

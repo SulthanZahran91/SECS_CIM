@@ -6,7 +6,18 @@ describe("ruleToYaml", () => {
   it("serializes conditions, reply, and mixed actions", () => {
     const rule = makeSnapshot().rules[0];
     rule.actions = [
-      { id: "action-1", delayMs: 300, type: "event", ceid: "TRANSFER_INITIATED" },
+      {
+        id: "action-1",
+        delayMs: 300,
+        type: "event",
+        ceid: "TRANSFER_INITIATED",
+        reports: [
+          {
+            rptid: "5001",
+            variables: [{ vid: "100", value: "A:LP01" }],
+          },
+        ],
+      },
       { id: "action-2", delayMs: 1200, type: "mutate", target: "ports.LP01", value: "empty" },
     ];
 
@@ -16,6 +27,10 @@ describe("ruleToYaml", () => {
     expect(yaml).toContain('    rcmd: "TRANSFER"');
     expect(yaml).toContain('    - field: "carrier_exists"');
     expect(yaml).toContain('      ceid: "TRANSFER_INITIATED"');
+    expect(yaml).toContain('      reports:');
+    expect(yaml).toContain('        - rptid: "5001"');
+    expect(yaml).toContain('            - vid: "100"');
+    expect(yaml).toContain('              value: "A:LP01"');
     expect(yaml).toContain('      target: "ports.LP01"');
     expect(yaml).toContain('      value: "empty"');
   });
@@ -29,4 +44,3 @@ describe("ruleToYaml", () => {
     expect(yaml).not.toContain("  conditions: []");
   });
 });
-

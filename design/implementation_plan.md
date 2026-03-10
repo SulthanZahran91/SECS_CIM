@@ -17,6 +17,7 @@ Current reality:
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
+- Rule-driven `S6F11` actions now support generator-style `CEID` / `RPTID` / `VID` declarations across the UI, YAML config, runtime logging, and outbound HSMS encoding.
 
 The design references remain:
 
@@ -105,6 +106,7 @@ Done:
 - The backend now keeps a live runtime state store separate from persisted `initial_state`
 - The backend can match decoded inbound commands against rules in order
 - Matched rules generate immediate reply records plus delayed event/mutate actions
+- Event actions can now declare generator-style `S6F11` reports and variable values instead of only a single `CEID`
 - Scheduled mutations update the live state store without dirtying persisted config
 - Basic rule-match diagnostics are recorded on inbound message records for matched and near-miss cases
 - A simulator controller now wires the rule engine into `/api/sim/start`, `/api/sim/stop`, `/api/sim/status`, and a decoded injection path for backend-driven testing
@@ -176,6 +178,7 @@ Done:
   - `S2F31` / `S2F32`
   - `S6F11` / `S6F12`
 - Rule-driven `S2F42` replies and scheduled `S6F11` events are now encoded and sent over the selected HSMS session
+- Structured `S6F11` actions now encode `CEID` plus optional report/value lists from the rule generator model while preserving CEID-only compatibility
 - Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
 
 Remaining:
@@ -200,6 +203,7 @@ Done:
 - Live-update stream disconnects now surface as reconnecting warnings in the UI
 - The message monitor now supports paused vs. live-tail behavior, plus a jump-to-latest affordance for sustained traffic
 - The HSMS tab now shows `restart required` only for unapplied connection-setting changes, and that indicator clears after a successful stop/start cycle
+- The Rules tab now uses a generator-style `S6F11` editor with report and variable rows for `CEID`, `RPTID`, and `VID` declarations
 
 Remaining:
 

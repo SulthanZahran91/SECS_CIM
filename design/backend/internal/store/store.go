@@ -256,6 +256,16 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 		if updated.Actions == nil {
 			updated.Actions = []model.RuleAction{}
 		}
+		for actionIndex := range updated.Actions {
+			if updated.Actions[actionIndex].Reports == nil {
+				updated.Actions[actionIndex].Reports = []model.RuleActionReport{}
+			}
+			for reportIndex := range updated.Actions[actionIndex].Reports {
+				if updated.Actions[actionIndex].Reports[reportIndex].Variables == nil {
+					updated.Actions[actionIndex].Reports[reportIndex].Variables = []model.RuleActionVariable{}
+				}
+			}
+		}
 		model.SortActions(updated.Actions)
 		if updated.Name == "" {
 			updated.Name = "unnamed rule"
@@ -288,11 +298,19 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 			Actions:    make([]model.RuleAction, 0, len(rule.Actions)),
 		}
 		for _, action := range rule.Actions {
+			reports := make([]model.RuleActionReport, 0, len(action.Reports))
+			for _, report := range action.Reports {
+				reports = append(reports, model.RuleActionReport{
+					RPTID:     report.RPTID,
+					Variables: append(make([]model.RuleActionVariable, 0, len(report.Variables)), report.Variables...),
+				})
+			}
 			duplicate.Actions = append(duplicate.Actions, model.RuleAction{
 				ID:      s.nextActionIDValue(),
 				DelayMS: action.DelayMS,
 				Type:    action.Type,
 				CEID:    action.CEID,
+				Reports: reports,
 				Target:  action.Target,
 				Value:   action.Value,
 			})

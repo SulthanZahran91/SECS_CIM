@@ -3,6 +3,8 @@ import type {
   MessageRecord,
   Rule,
   RuleAction,
+  RuleActionReport,
+  RuleActionVariable,
   RuleCondition,
   Snapshot,
 } from "../types";
@@ -19,7 +21,17 @@ function normalizeRule(rule: Rule): Rule {
   return {
     ...rule,
     conditions: ensureArray<RuleCondition>(rule.conditions),
-    actions: ensureArray<RuleAction>(rule.actions),
+    actions: ensureArray<RuleAction>(rule.actions).map(normalizeRuleAction),
+  };
+}
+
+function normalizeRuleAction(action: RuleAction): RuleAction {
+  return {
+    ...action,
+    reports: ensureArray<RuleActionReport>(action.reports).map((report) => ({
+      ...report,
+      variables: ensureArray<RuleActionVariable>(report.variables),
+    })),
   };
 }
 

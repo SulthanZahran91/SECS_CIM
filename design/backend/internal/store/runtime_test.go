@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"secsim/design/backend/internal/hsms"
 	"secsim/design/backend/internal/model"
 )
 
@@ -213,6 +214,86 @@ func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
 	}
 	if len(store.pending) != 0 {
 		t.Fatalf("expected scheduled queue to drain, got %d", len(store.pending))
+	}
+}
+
+func TestRunScheduledBuildsStructuredEventReports(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	rule := store.Snapshot().Rules[0]
+	rule.Actions = []model.RuleAction{
+		{
+			ID:      "action-1",
+			DelayMS: 0,
+			Type:    "event",
+			CEID:    "1001",
+			Reports: []model.RuleActionReport{
+				{
+					RPTID: "5001",
+					Variables: []model.RuleActionVariable{
+						{VID: "100", Value: "A:LP01"},
+						{VID: "101", Value: "7"},
+					},
+				},
+			},
+		},
+	}
+	if _, err := store.UpdateRule(rule); err != nil {
+		t.Fatalf("update rule: %v", err)
+	}
+
+	now := time.Date(2026, time.March, 10, 16, 17, 0, 0, time.UTC)
+	store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+	}, now)
+
+	result, err := store.RunScheduled(now)
+	if err != nil {
+		t.Fatalf("run scheduled actions: %v", err)
+	}
+
+	if len(result.Emitted) != 1 || len(result.Outbound) != 1 {
+		t.Fatalf("expected one structured event, got emitted=%d outbound=%d", len(result.Emitted), len(result.Outbound))
+	}
+
+	event := result.Outbound[0]
+	if ceid, ok := hsms.ExtractS6F11CEID(event); !ok || ceid != "1001" {
+		t.Fatalf("expected structured CEID 1001, got %#v", event)
+	}
+	if event.Body == nil || len(event.Body.Children) != 3 {
+		t.Fatalf("expected structured S6F11 body, got %#v", event.Body)
+	}
+
+	reports := event.Body.Children[2]
+	if reports.Type != hsms.ItemList || len(reports.Children) != 1 {
+		t.Fatalf("expected one report list, got %#v", reports)
+	}
+	report := reports.Children[0]
+	if report.Type != hsms.ItemList || len(report.Children) != 2 {
+		t.Fatalf("expected report pair, got %#v", report)
+	}
+	if got := report.Children[0].ScalarValue(); got != "5001" {
+		t.Fatalf("expected RPTID 5001, got %q", got)
+	}
+	values := report.Children[1]
+	if values.Type != hsms.ItemList || len(values.Children) != 2 {
+		t.Fatalf("expected two report values, got %#v", values)
+	}
+	if got := values.Children[0].ScalarValue(); got != "LP01" {
+		t.Fatalf("expected first report value LP01, got %q", got)
+	}
+	if got := values.Children[1].ScalarValue(); got != "7" {
+		t.Fatalf("expected second report value 7, got %q", got)
+	}
+	if result.Emitted[0].Detail.RawSML != event.RawSML() {
+		t.Fatalf("expected logged raw SML to match outbound message, got %q vs %q", result.Emitted[0].Detail.RawSML, event.RawSML())
 	}
 }
 

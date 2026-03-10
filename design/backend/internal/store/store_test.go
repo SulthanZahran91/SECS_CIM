@@ -157,6 +157,51 @@ func TestDuplicateRuleCreatesDistinctRuleAndActionIDs(t *testing.T) {
 	}
 }
 
+func TestSaveAndReloadPreservesStructuredEventReports(t *testing.T) {
+	store, _ := newFileBackedStore(t)
+
+	rule := store.Snapshot().Rules[0]
+	rule.Actions = []model.RuleAction{
+		{
+			ID:      "action-1",
+			DelayMS: 25,
+			Type:    "event",
+			CEID:    "1001",
+			Reports: []model.RuleActionReport{
+				{
+					RPTID: "5001",
+					Variables: []model.RuleActionVariable{
+						{VID: "100", Value: "A:LP01"},
+					},
+				},
+			},
+		},
+	}
+	if _, err := store.UpdateRule(rule); err != nil {
+		t.Fatalf("update rule: %v", err)
+	}
+
+	if _, err := store.Save(); err != nil {
+		t.Fatalf("save snapshot: %v", err)
+	}
+
+	reloaded, err := store.Reload()
+	if err != nil {
+		t.Fatalf("reload snapshot: %v", err)
+	}
+
+	savedAction := reloaded.Rules[0].Actions[0]
+	if savedAction.CEID != "1001" || len(savedAction.Reports) != 1 {
+		t.Fatalf("expected structured event report after reload, got %#v", savedAction)
+	}
+	if savedAction.Reports[0].RPTID != "5001" || len(savedAction.Reports[0].Variables) != 1 {
+		t.Fatalf("expected structured report variables after reload, got %#v", savedAction.Reports[0])
+	}
+	if savedAction.Reports[0].Variables[0].VID != "100" || savedAction.Reports[0].Variables[0].Value != "A:LP01" {
+		t.Fatalf("expected VID/value payload after reload, got %#v", savedAction.Reports[0].Variables[0])
+	}
+}
+
 func TestReloadRestoresBaselineButKeepsRuntimeState(t *testing.T) {
 	store, path := newFileBackedStore(t)
 
@@ -387,7 +432,12 @@ rules:
     events:
       - delay_ms: 10
         type: event
-        ceid: READY
+        ceid: "1001"
+        reports:
+          - rptid: "5001"
+            variables:
+              - vid: "100"
+                value: "A:LP01"
 `), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
@@ -412,6 +462,12 @@ rules:
 	}
 	if len(snapshot.Rules[0].Actions) != 1 || snapshot.Rules[0].Actions[0].ID != "action-1" {
 		t.Fatalf("expected file actions to load with generated IDs, got %#v", snapshot.Rules[0].Actions)
+	}
+	if len(snapshot.Rules[0].Actions[0].Reports) != 1 || snapshot.Rules[0].Actions[0].Reports[0].RPTID != "5001" {
+		t.Fatalf("expected structured event reports from file, got %#v", snapshot.Rules[0].Actions[0])
+	}
+	if len(snapshot.Rules[0].Actions[0].Reports[0].Variables) != 1 || snapshot.Rules[0].Actions[0].Reports[0].Variables[0].VID != "100" {
+		t.Fatalf("expected structured event variables from file, got %#v", snapshot.Rules[0].Actions[0].Reports[0].Variables)
 	}
 }
 

@@ -26,7 +26,20 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 
 	rule := state.ConfigSnapshot().Rules[0]
 	rule.Actions = []model.RuleAction{
-		{ID: "action-1", DelayMS: 20, Type: "event", CEID: "TRANSFER_INITIATED"},
+		{
+			ID:      "action-1",
+			DelayMS: 20,
+			Type:    "event",
+			CEID:    "1001",
+			Reports: []model.RuleActionReport{
+				{
+					RPTID: "5001",
+					Variables: []model.RuleActionVariable{
+						{VID: "100", Value: "A:LP01"},
+					},
+				},
+			},
+		},
 		{ID: "action-2", DelayMS: 40, Type: "mutate", Target: "carriers.CARR001.location", Value: "SHELF_A01"},
 		{ID: "action-3", DelayMS: 40, Type: "mutate", Target: "ports.LP01", Value: "empty"},
 		{ID: "action-4", DelayMS: 40, Type: "event", CEID: "TRANSFER_COMPLETED"},
@@ -99,8 +112,17 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	if firstEvent.Stream != 6 || firstEvent.Function != 11 {
 		t.Fatalf("expected S6F11 event, got %#v", firstEvent)
 	}
-	if ceid, ok := hsms.ExtractSingleASCII(firstEvent); !ok || ceid != "TRANSFER_INITIATED" {
-		t.Fatalf("expected TRANSFER_INITIATED event body, got %#v", firstEvent)
+	if ceid, ok := hsms.ExtractS6F11CEID(firstEvent); !ok || ceid != "1001" {
+		t.Fatalf("expected structured CEID 1001 event body, got %#v", firstEvent)
+	}
+	if firstEvent.Body == nil || len(firstEvent.Body.Children) != 3 {
+		t.Fatalf("expected structured S6F11 body, got %#v", firstEvent.Body)
+	}
+	if got := firstEvent.Body.Children[2].Children[0].Children[0].ScalarValue(); got != "5001" {
+		t.Fatalf("expected structured RPTID 5001, got %q", got)
+	}
+	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].ScalarValue(); got != "LP01" {
+		t.Fatalf("expected structured VID value LP01, got %q", got)
 	}
 
 	secondEvent := readMessage(t, conn)

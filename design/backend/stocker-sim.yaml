@@ -54,7 +54,12 @@ rules:
     events:
       - delay_ms: 300
         type: event
-        ceid: TRANSFER_INITIATED
+        ceid: "1001"
+        reports:
+          - rptid: "5001"
+            variables:
+              - vid: "100"
+                value: "A:LP01"
       - delay_ms: 1200
         type: mutate
         target: carriers.CARR001.location
@@ -65,7 +70,12 @@ rules:
         value: empty
       - delay_ms: 1200
         type: event
-        ceid: TRANSFER_COMPLETED
+        ceid: "1002"
+        reports:
+          - rptid: "5002"
+            variables:
+              - vid: "100"
+                value: "A:SHELF_A01"
   - name: reject when blocked
     enabled: true
     match:

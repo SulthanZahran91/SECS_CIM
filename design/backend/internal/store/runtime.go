@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"secsim/design/backend/internal/hsms"
 	"secsim/design/backend/internal/model"
 )
 
@@ -26,6 +27,7 @@ type RuntimeResult struct {
 	MatchedRule   string
 	Reply         *model.MessageRecord
 	Emitted       []model.MessageRecord
+	Outbound      []hsms.Message
 	StateChanges  []StateChange
 	Snapshot      model.Snapshot
 }
@@ -104,6 +106,7 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 
 	result := RuntimeResult{
 		Emitted:      []model.MessageRecord{},
+		Outbound:     []hsms.Message{},
 		StateChanges: []StateChange{},
 	}
 	changed := false
@@ -117,9 +120,23 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 
 		switch pending.Action.Type {
 		case "event":
-			record := s.newEventRecord(pending, pending.DueAt)
+			message, record, err := buildScheduledEventMessage(
+				uint16(s.config.HSMS.SessionID),
+				s.nextMessageIDValue(),
+				pending,
+				pending.DueAt,
+			)
+			if err != nil {
+				if changed {
+					result.Snapshot = s.snapshotAndPublishLocked()
+				} else {
+					result.Snapshot = s.snapshotLocked()
+				}
+				return result, err
+			}
 			s.messages = append(s.messages, record)
 			result.Emitted = append(result.Emitted, record)
+			result.Outbound = append(result.Outbound, message)
 			changed = true
 		case "mutate":
 			change, err := applyMutation(&s.liveState, pending.Action.Target, pending.Action.Value)
@@ -436,27 +453,6 @@ func (s *Store) newReplyRecord(rule model.Rule, occurredAt time.Time) model.Mess
 			WBit:     false,
 			Body:     body,
 			RawSML:   defaultRawSML(rule.Reply.Stream, rule.Reply.Function, false, body),
-		},
-		Evaluations: []model.ConditionEvaluation{},
-	}
-}
-
-func (s *Store) newEventRecord(action scheduledAction, occurredAt time.Time) model.MessageRecord {
-	body := fmt.Sprintf("L:1\n  <A %q>", action.Action.CEID)
-	return model.MessageRecord{
-		ID:            s.nextMessageIDValue(),
-		Timestamp:     formatTimestamp(occurredAt),
-		Direction:     "OUT",
-		SF:            "S6F11",
-		Label:         action.Action.CEID,
-		MatchedRule:   action.RuleName,
-		MatchedRuleID: action.RuleID,
-		Detail: model.MessageDetail{
-			Stream:   6,
-			Function: 11,
-			WBit:     true,
-			Body:     body,
-			RawSML:   defaultRawSML(6, 11, true, body),
 		},
 		Evaluations: []model.ConditionEvaluation{},
 	}

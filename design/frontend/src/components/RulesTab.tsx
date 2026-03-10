@@ -1,5 +1,5 @@
 import { ActionButton, Badge, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
-import type { Rule, RuleAction, RuleCondition } from "../types";
+import type { Rule, RuleAction, RuleActionReport, RuleActionVariable, RuleCondition } from "../types";
 
 interface RulesTabProps {
   rules: Rule[];
@@ -25,6 +25,7 @@ function createAction(type: RuleAction["type"]): RuleAction {
         delayMs: 0,
         type,
         ceid: "",
+        reports: [],
       }
     : {
         id: crypto.randomUUID(),
@@ -42,6 +43,7 @@ function convertAction(type: RuleAction["type"], action: RuleAction): RuleAction
         delayMs: action.delayMs,
         type,
         ceid: action.ceid ?? "",
+        reports: action.reports ?? [],
       }
     : {
         id: action.id,
@@ -54,6 +56,31 @@ function convertAction(type: RuleAction["type"], action: RuleAction): RuleAction
 
 function sortActions(actions: RuleAction[]): RuleAction[] {
   return [...actions].sort((left, right) => left.delayMs - right.delayMs || left.id.localeCompare(right.id));
+}
+
+function eventSummary(action: RuleAction): string {
+  const reportCount = action.reports?.length ?? 0;
+  const variableCount = (action.reports ?? []).reduce((total, report) => total + report.variables.length, 0);
+  const ceid = action.ceid?.trim() || "unset";
+  if (reportCount === 0) {
+    return `S6F11 CEID=${ceid}`;
+  }
+
+  return `S6F11 CEID=${ceid} · ${reportCount} RPT · ${variableCount} VID`;
+}
+
+function createReport(): RuleActionReport {
+  return {
+    rptid: "",
+    variables: [],
+  };
+}
+
+function createVariable(): RuleActionVariable {
+  return {
+    vid: "",
+    value: "",
+  };
 }
 
 export function RulesTab({
@@ -387,18 +414,200 @@ function RuleCard({
                           mono
                         />
                         {action.type === "event" ? (
-                          <LabeledInput
-                            label="CEID"
-                            value={action.ceid ?? ""}
-                            onChange={(value) => {
-                              const nextActions = rule.actions.map((item) =>
-                                item.id === action.id ? { ...item, ceid: value } : item,
-                              );
-                              updateActions(nextActions);
-                            }}
-                            width={160}
-                            mono
-                          />
+                          <div className="event-generator">
+                            <div className="event-generator-head">
+                              <Badge tone="yellow">S6F11</Badge>
+                              <span className="event-generator-copy">Generator-style event declaration</span>
+                              <span className="event-generator-preview">{eventSummary(action)}</span>
+                            </div>
+                            <div className="field-row compact" style={{ flexWrap: "wrap" }}>
+                              <LabeledInput
+                                label="CEID"
+                                value={action.ceid ?? ""}
+                                onChange={(value) => {
+                                  const nextActions = rule.actions.map((item) =>
+                                    item.id === action.id ? { ...item, ceid: value } : item,
+                                  );
+                                  updateActions(nextActions);
+                                }}
+                                width={180}
+                                mono
+                              />
+                            </div>
+                            <div className="event-generator-toolbar">
+                              <div className="rule-section-title" style={{ marginBottom: 0 }}>Reports</div>
+                              <ActionButton
+                                variant="accent"
+                                onClick={() => {
+                                  const nextActions = rule.actions.map((item) =>
+                                    item.id === action.id
+                                      ? {
+                                          ...item,
+                                          reports: [...(item.reports ?? []), createReport()],
+                                        }
+                                      : item,
+                                  );
+                                  updateActions(nextActions);
+                                }}
+                              >
+                                + Report
+                              </ActionButton>
+                            </div>
+                            {(action.reports?.length ?? 0) === 0 ? (
+                              <div className="empty-copy">CEID-only event. Add a report to declare RPTID and VID values.</div>
+                            ) : (
+                              <div className="stack-list">
+                                {(action.reports ?? []).map((report, reportIndex) => (
+                                  <div className="event-report-card" key={`${action.id}-report-${reportIndex}`}>
+                                    <div className="field-row compact" style={{ flexWrap: "wrap" }}>
+                                      <LabeledInput
+                                        label="RPTID"
+                                        value={report.rptid}
+                                        onChange={(value) => {
+                                          const nextActions = rule.actions.map((item) => {
+                                            if (item.id !== action.id) {
+                                              return item;
+                                            }
+
+                                            const nextReports = [...(item.reports ?? [])];
+                                            nextReports[reportIndex] = { ...report, rptid: value };
+                                            return { ...item, reports: nextReports };
+                                          });
+                                          updateActions(nextActions);
+                                        }}
+                                        width={180}
+                                        mono
+                                      />
+                                      <ActionButton
+                                        variant="danger"
+                                        onClick={() => {
+                                          const nextActions = rule.actions.map((item) =>
+                                            item.id === action.id
+                                              ? {
+                                                  ...item,
+                                                  reports: (item.reports ?? []).filter((_, index) => index !== reportIndex),
+                                                }
+                                              : item,
+                                          );
+                                          updateActions(nextActions);
+                                        }}
+                                      >
+                                        Remove Report
+                                      </ActionButton>
+                                    </div>
+                                    <div className="event-generator-toolbar">
+                                      <div className="rule-section-title" style={{ marginBottom: 0 }}>Variables</div>
+                                      <ActionButton
+                                        variant="accent"
+                                        onClick={() => {
+                                          const nextActions = rule.actions.map((item) => {
+                                            if (item.id !== action.id) {
+                                              return item;
+                                            }
+
+                                            const nextReports = [...(item.reports ?? [])];
+                                            nextReports[reportIndex] = {
+                                              ...report,
+                                              variables: [...report.variables, createVariable()],
+                                            };
+                                            return { ...item, reports: nextReports };
+                                          });
+                                          updateActions(nextActions);
+                                        }}
+                                      >
+                                        + Variable
+                                      </ActionButton>
+                                    </div>
+                                    {report.variables.length === 0 ? (
+                                      <div className="empty-copy">No VID declarations in this report yet.</div>
+                                    ) : (
+                                      <div className="stack-list">
+                                        {report.variables.map((variable, variableIndex) => (
+                                          <div
+                                            className="condition-row event-variable-row"
+                                            key={`${action.id}-report-${reportIndex}-variable-${variableIndex}`}
+                                          >
+                                            <div className="field-group" style={{ width: 180 }}>
+                                              <span className="field-label">VID</span>
+                                              <input
+                                                className="field-input mono"
+                                                value={variable.vid}
+                                                onChange={(event) => {
+                                                  const nextActions = rule.actions.map((item) => {
+                                                    if (item.id !== action.id) {
+                                                      return item;
+                                                    }
+
+                                                    const nextReports = [...(item.reports ?? [])];
+                                                    const nextVariables = [...report.variables];
+                                                    nextVariables[variableIndex] = { ...variable, vid: event.target.value };
+                                                    nextReports[reportIndex] = { ...report, variables: nextVariables };
+                                                    return { ...item, reports: nextReports };
+                                                  });
+                                                  updateActions(nextActions);
+                                                }}
+                                                placeholder="e.g. 100"
+                                              />
+                                            </div>
+                                            <div className="field-group" style={{ flex: 1 }}>
+                                              <span className="field-label">Value</span>
+                                              <input
+                                                className="field-input mono"
+                                                value={variable.value}
+                                                onChange={(event) => {
+                                                  const nextActions = rule.actions.map((item) => {
+                                                    if (item.id !== action.id) {
+                                                      return item;
+                                                    }
+
+                                                    const nextReports = [...(item.reports ?? [])];
+                                                    const nextVariables = [...report.variables];
+                                                    nextVariables[variableIndex] = { ...variable, value: event.target.value };
+                                                    nextReports[reportIndex] = { ...report, variables: nextVariables };
+                                                    return { ...item, reports: nextReports };
+                                                  });
+                                                  updateActions(nextActions);
+                                                }}
+                                                placeholder='e.g. A:LP01 or U4:100'
+                                              />
+                                            </div>
+                                            <button
+                                              className="icon-button danger"
+                                              onClick={() => {
+                                                const nextActions = rule.actions.map((item) => {
+                                                  if (item.id !== action.id) {
+                                                    return item;
+                                                  }
+
+                                                  const nextReports = [...(item.reports ?? [])];
+                                                  nextReports[reportIndex] = {
+                                                    ...report,
+                                                    variables: report.variables.filter((_, index) => index !== variableIndex),
+                                                  };
+                                                  return { ...item, reports: nextReports };
+                                                });
+                                                updateActions(nextActions);
+                                              }}
+                                              type="button"
+                                            >
+                                              ×
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="meta-note">
+                              Values default to <code>U4</code> when numeric and <code>A</code> otherwise. Prefix with
+                              {" "}
+                              <code>A:</code>, <code>U1:</code>, <code>U2:</code>, <code>U4:</code>, <code>BOOL:</code>,
+                              {" "}
+                              or <code>B:</code> to force a SECS type.
+                            </div>
+                          </div>
                         ) : (
                           <>
                             <LabeledInput

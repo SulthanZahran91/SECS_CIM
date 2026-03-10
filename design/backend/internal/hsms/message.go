@@ -107,7 +107,7 @@ func (message Message) Label() string {
 	case message.Stream == 2 && message.Function == 42:
 		return "Remote Cmd Ack"
 	case message.Stream == 6 && message.Function == 11:
-		if ceid, ok := ExtractSingleASCII(message); ok {
+		if ceid, ok := ExtractS6F11CEID(message); ok && ceid != "" {
 			return ceid
 		}
 		return "Event Report"
@@ -157,6 +157,17 @@ func ExtractSingleASCII(message Message) (string, bool) {
 	}
 
 	return value.Text, true
+}
+
+func ExtractS6F11CEID(message Message) (string, bool) {
+	if ceid, ok := ExtractSingleASCII(message); ok {
+		return ceid, true
+	}
+	if message.Body == nil || message.Body.Type != ItemList || len(message.Body.Children) < 2 {
+		return "", false
+	}
+
+	return message.Body.Children[1].ScalarValue(), true
 }
 
 func BuildS1F2(sessionID uint16, systemBytes uint32, mdln string, softrev string) Message {

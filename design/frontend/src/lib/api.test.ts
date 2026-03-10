@@ -67,12 +67,28 @@ describe("api client", () => {
   });
 
   it("normalizes null collections in snapshot responses", async () => {
+    const rule = makeSnapshot().rules[0];
+    rule.actions = [
+      {
+        ...rule.actions[0],
+        reports: [
+          {
+            rptid: "5001",
+            variables: null as never,
+          },
+        ],
+      },
+    ];
     const malformed = {
       ...makeSnapshot(),
       rules: [
         {
-          ...makeSnapshot().rules[0],
+          ...rule,
           conditions: null,
+        },
+        {
+          ...makeSnapshot().rules[1],
+          conditions: [],
           actions: null,
         },
       ],
@@ -88,7 +104,8 @@ describe("api client", () => {
     const result = await api.bootstrap();
 
     expect(result.rules[0].conditions).toEqual([]);
-    expect(result.rules[0].actions).toEqual([]);
+    expect(result.rules[0].actions[0].reports?.[0].variables).toEqual([]);
+    expect(result.rules[1].actions).toEqual([]);
     expect(result.messages).toEqual([]);
   });
 });

@@ -256,15 +256,9 @@ func (c *Controller) sendScheduledMessages(result store.RuntimeResult) {
 		return
 	}
 
-	config := result.Snapshot
-	for _, record := range result.Emitted {
-		if record.Detail.Stream != 6 || record.Detail.Function != 11 {
-			continue
-		}
-
-		message := hsms.BuildS6F11(uint16(config.HSMS.SessionID), 0, record.Label)
+	for _, message := range result.Outbound {
 		if err := transport.Send(message); err != nil && !errors.Is(err, hsms.ErrNoSelectedSession) {
-			log.Printf("send scheduled message %s: %v", record.SF, err)
+			log.Printf("send scheduled message %s: %v", message.RawSML(), err)
 		}
 	}
 }

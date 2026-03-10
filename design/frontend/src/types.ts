@@ -90,8 +90,19 @@ export interface RuleAction {
   delayMs: number;
   type: "event" | "mutate";
   ceid?: string;
+  reports?: RuleActionReport[];
   target?: string;
   value?: string;
+}
+
+export interface RuleActionReport {
+  rptid: string;
+  variables: RuleActionVariable[];
+}
+
+export interface RuleActionVariable {
+  vid: string;
+  value: string;
 }
 
 export interface MessageRecord {
