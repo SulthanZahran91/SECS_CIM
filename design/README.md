@@ -44,6 +44,27 @@ If `frontend/dist` exists, the Go server will serve the built app at `/`.
 
 Frontend unit tests run with Vitest and Testing Library via `npm test`.
 
+## HSMS Smoke Test
+
+With the backend running on `http://127.0.0.1:8080` in passive HSMS mode, you can run a small client that:
+
+- starts the simulator via `/api/sim/start`
+- opens an HSMS session
+- sends `S1F13`
+- sends `S2F41 TRANSFER`
+- prints the `S1F14`, `S2F42`, and `S6F11` responses
+
+```bash
+cd design/backend
+go run ./cmd/hsmsprobe
+```
+
+Optional flags:
+
+```bash
+go run ./cmd/hsmsprobe --api http://127.0.0.1:8080 --carrier CARR001 --source LP01
+```
+
 ## Air-Gapped Package
 
 From the repository root:

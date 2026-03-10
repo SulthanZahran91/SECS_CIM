@@ -203,6 +203,7 @@ Done:
 - Windows air-gapped packaging exists
 - Built frontend can be served by the backend
 - The Windows package now includes a default `stocker-sim.yaml` config next to `secsim.exe`
+- A small HSMS smoke-test client now exists at `design/backend/cmd/hsmsprobe` for manual protocol validation against a running simulator
 
 Remaining:
 
