@@ -33,6 +33,10 @@ function normalizeMessage(message: MessageRecord): MessageRecord {
 export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
+    runtime: {
+      ...snapshot.runtime,
+      restartRequired: Boolean(snapshot.runtime?.restartRequired),
+    },
     state: {
       ...snapshot.state,
       ports: ensureObject(snapshot.state?.ports, {}),

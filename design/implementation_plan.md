@@ -13,6 +13,7 @@ Current reality:
 - File-backed config persistence, backend rule/runtime execution, and live frontend runtime subscriptions now exist.
 - Real HSMS transport now exists, and a minimal SECS-II codec/message pipeline is wired into the live runtime.
 - The live UI now surfaces transport/runtime failures and supports paused vs. auto-tail monitor behavior during sustained sessions.
+- The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 
 The design references remain:
@@ -133,6 +134,7 @@ Done:
   - `Separate.req`
 - Session state changes now update the shared runtime snapshot so the status bar reflects actual transport state
 - The runtime now applies configured address, port, session ID, and basic T5/T6/T7/T8 timer behavior
+- `T8` enforcement now applies to inter-byte stalls within a frame instead of idle time between frames, which keeps selected sessions up against quieter hosts
 
 Remaining:
 
@@ -188,6 +190,7 @@ Done:
 - Runtime transport failures from the backend are now surfaced directly in the UI and toolbar state
 - Live-update stream disconnects now surface as reconnecting warnings in the UI
 - The message monitor now supports paused vs. live-tail behavior, plus a jump-to-latest affordance for sustained traffic
+- The HSMS tab now shows `restart required` only for unapplied connection-setting changes, and that indicator clears after a successful stop/start cycle
 
 Remaining:
 

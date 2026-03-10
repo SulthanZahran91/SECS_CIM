@@ -294,6 +294,55 @@ func TestDirtyTrackingClearsWhenConfigMatchesBaselineAgain(t *testing.T) {
 	}
 }
 
+func TestRestartRequiredTracksPendingConnectionChanges(t *testing.T) {
+	store := New()
+
+	applied := store.Snapshot().HSMS
+	store.RecordAppliedHSMS(applied)
+	store.SetRuntime(true, "SELECTED")
+
+	if store.Snapshot().Runtime.RestartRequired {
+		t.Fatalf("expected restartRequired to be false before connection changes")
+	}
+
+	changed := applied
+	changed.Port++
+	snapshot := store.UpdateHSMS(changed)
+	if !snapshot.Runtime.RestartRequired {
+		t.Fatalf("expected restartRequired after changing HSMS connection settings")
+	}
+
+	snapshot, err := store.Save()
+	if err != nil {
+		t.Fatalf("save changed HSMS config: %v", err)
+	}
+	if !snapshot.Runtime.RestartRequired {
+		t.Fatalf("expected save to preserve restartRequired until runtime is restarted")
+	}
+
+	snapshot = store.SetRuntime(false, "NOT CONNECTED")
+	if snapshot.Runtime.RestartRequired {
+		t.Fatalf("expected stopping runtime to clear restartRequired")
+	}
+}
+
+func TestRestartRequiredIgnoresNonConnectionHSMSChanges(t *testing.T) {
+	store := New()
+
+	applied := store.Snapshot().HSMS
+	store.RecordAppliedHSMS(applied)
+	store.SetRuntime(true, "SELECTED")
+
+	changed := applied
+	changed.Timers.T8++
+	changed.SessionID++
+
+	snapshot := store.UpdateHSMS(changed)
+	if snapshot.Runtime.RestartRequired {
+		t.Fatalf("expected non-connection HSMS changes to avoid restartRequired")
+	}
+}
+
 func TestNewFromFileLoadsYAMLConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sim.yaml")
 	if err := os.WriteFile(path, []byte(`

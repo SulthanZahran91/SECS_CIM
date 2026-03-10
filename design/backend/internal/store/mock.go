@@ -5,11 +5,12 @@ import "secsim/design/backend/internal/model"
 func seedSnapshot() model.Snapshot {
 	return model.Snapshot{
 		Runtime: model.RuntimeState{
-			Listening:  false,
-			HSMSState:  "NOT CONNECTED",
-			ConfigFile: "stocker-sim.yaml",
-			Dirty:      false,
-			LastError:  "",
+			Listening:       false,
+			HSMSState:       "NOT CONNECTED",
+			ConfigFile:      "stocker-sim.yaml",
+			Dirty:           false,
+			RestartRequired: false,
+			LastError:       "",
 		},
 		HSMS: model.HsmsConfig{
 			Mode:      "passive",

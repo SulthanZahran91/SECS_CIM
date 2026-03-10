@@ -18,6 +18,7 @@ type Store struct {
 	mu            sync.RWMutex
 	config        model.Snapshot
 	baseline      model.Snapshot
+	appliedHSMS   model.HsmsConfig
 	liveState     model.StateSnapshot
 	messages      []model.MessageRecord
 	pending       []scheduledAction
@@ -54,10 +55,11 @@ func NewFromFile(path string) (*Store, error) {
 
 	store.config = cloneConfigSnapshot(loaded)
 	store.baseline = cloneConfigSnapshot(loaded)
+	store.appliedHSMS = loaded.HSMS
 	store.liveState = normalizeState(loaded.State)
 	store.messages = cloneMessages(loaded.Messages)
 	store.pending = nil
-	store.updateDirtyLocked()
+	store.updateRuntimeFlagsLocked()
 	store.resetIDCountersLocked()
 
 	return store, nil
@@ -67,13 +69,14 @@ func newStore(snapshot model.Snapshot, configPath string) *Store {
 	store := &Store{
 		config:      cloneConfigSnapshot(snapshot),
 		baseline:    cloneConfigSnapshot(snapshot),
+		appliedHSMS: snapshot.HSMS,
 		liveState:   normalizeState(snapshot.State),
 		messages:    cloneMessages(snapshot.Messages),
 		pending:     nil,
 		subscribers: map[chan model.Snapshot]struct{}{},
 		configPath:  configPath,
 	}
-	store.updateDirtyLocked()
+	store.updateRuntimeFlagsLocked()
 	store.resetIDCountersLocked()
 
 	return store
@@ -143,7 +146,7 @@ func (s *Store) Save() (model.Snapshot, error) {
 	}
 
 	s.baseline = cloneConfigSnapshot(s.config)
-	s.updateDirtyLocked()
+	s.updateRuntimeFlagsLocked()
 
 	return s.snapshotAndPublishLocked(), nil
 }
@@ -175,7 +178,7 @@ func (s *Store) Reload() (model.Snapshot, error) {
 	s.liveState = normalizeState(nextConfig.State)
 	s.messages = currentMessages
 	s.pending = nil
-	s.updateDirtyLocked()
+	s.updateRuntimeFlagsLocked()
 	s.resetIDCountersLocked()
 
 	return s.snapshotAndPublishLocked(), nil
@@ -196,7 +199,7 @@ func (s *Store) UpdateHSMS(config model.HsmsConfig) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.config.HSMS = config
-	s.updateDirtyLocked()
+	s.updateRuntimeFlagsLocked()
 
 	return s.snapshotAndPublishLocked()
 }
@@ -206,7 +209,7 @@ func (s *Store) UpdateDevice(device model.DeviceConfig) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.config.Device = device
-	s.updateDirtyLocked()
+	s.updateRuntimeFlagsLocked()
 
 	return s.snapshotAndPublishLocked()
 }
@@ -233,7 +236,7 @@ func (s *Store) NewRule() model.Snapshot {
 		Actions: []model.RuleAction{},
 	}
 	s.config.Rules = append(s.config.Rules, newRule)
-	s.updateDirtyLocked()
+	s.updateRuntimeFlagsLocked()
 
 	return s.snapshotAndPublishLocked()
 }
@@ -258,7 +261,7 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 			updated.Name = "unnamed rule"
 		}
 		s.config.Rules[index] = updated
-		s.updateDirtyLocked()
+		s.updateRuntimeFlagsLocked()
 
 		return s.snapshotAndPublishLocked(), nil
 	}
@@ -299,7 +302,7 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 		nextRules = append(nextRules, duplicate)
 		nextRules = append(nextRules, s.config.Rules[index+1:]...)
 		s.config.Rules = nextRules
-		s.updateDirtyLocked()
+		s.updateRuntimeFlagsLocked()
 
 		return s.snapshotAndPublishLocked(), nil
 	}
@@ -317,7 +320,7 @@ func (s *Store) DeleteRule(id string) (model.Snapshot, error) {
 		}
 
 		s.config.Rules = append(s.config.Rules[:index], s.config.Rules[index+1:]...)
-		s.updateDirtyLocked()
+		s.updateRuntimeFlagsLocked()
 
 		return s.snapshotAndPublishLocked(), nil
 	}
@@ -349,7 +352,7 @@ func (s *Store) MoveRule(id string, direction string) (model.Snapshot, error) {
 		}
 
 		s.config.Rules[index], s.config.Rules[target] = s.config.Rules[target], s.config.Rules[index]
-		s.updateDirtyLocked()
+		s.updateRuntimeFlagsLocked()
 
 		return s.snapshotAndPublishLocked(), nil
 	}
@@ -370,13 +373,23 @@ func (s *Store) snapshotAndPublishLocked() model.Snapshot {
 	return snapshot
 }
 
-func (s *Store) updateDirtyLocked() {
+func (s *Store) RecordAppliedHSMS(config model.HsmsConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.appliedHSMS = config
+	s.updateRuntimeFlagsLocked()
+}
+
+func (s *Store) updateRuntimeFlagsLocked() {
 	s.config.Runtime.Dirty = !configEquals(s.config, s.baseline)
+	s.config.Runtime.RestartRequired = s.config.Runtime.Listening && !sameHSMSConnection(s.config.HSMS, s.appliedHSMS)
 }
 
 func (s *Store) setRuntimeLocked(listening bool, hsmsState string) {
 	s.config.Runtime.Listening = listening
 	s.config.Runtime.HSMSState = hsmsState
+	s.updateRuntimeFlagsLocked()
 	if !listening || hsmsState == "LISTENING" || hsmsState == "SELECTED" {
 		s.config.Runtime.LastError = ""
 	}
@@ -413,8 +426,15 @@ func cloneConfigSnapshot(snapshot model.Snapshot) model.Snapshot {
 	cloned := model.CloneSnapshot(snapshot)
 	cloned.Messages = []model.MessageRecord{}
 	cloned.Runtime.Dirty = false
+	cloned.Runtime.RestartRequired = false
 	cloned.Runtime.LastError = ""
 	return cloned
+}
+
+func sameHSMSConnection(left model.HsmsConfig, right model.HsmsConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(left.Mode), strings.TrimSpace(right.Mode)) &&
+		strings.TrimSpace(left.IP) == strings.TrimSpace(right.IP) &&
+		left.Port == right.Port
 }
 
 func cloneMessages(messages []model.MessageRecord) []model.MessageRecord {

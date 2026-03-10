@@ -186,11 +186,7 @@ func (m *Manager) runSession(ctx context.Context, session *session, active bool)
 	}
 
 	for {
-		if err := session.conn.SetReadDeadline(time.Now().Add(timerDuration(m.config.Timers.T8, 5*time.Second))); err != nil && m.handlers.OnError != nil {
-			m.handlers.OnError(err)
-		}
-
-		frame, err := ReadFrame(session.conn)
+		frame, err := ReadFrameWithInterByteTimeout(session.conn, timerDuration(m.config.Timers.T8, 5*time.Second))
 		if err != nil {
 			if ctx.Err() == nil && !isClosedNetworkError(err) && m.handlers.OnError != nil {
 				m.handlers.OnError(err)

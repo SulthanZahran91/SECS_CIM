@@ -217,4 +217,29 @@ describe("App", () => {
 
     expect(await screen.findByText("Live updates disconnected. Reconnecting…")).toBeInTheDocument();
   });
+
+  it("shows restart required only for unapplied HSMS connection changes", async () => {
+    const user = userEvent.setup();
+    const snapshot = makeSnapshot();
+    snapshot.runtime.dirty = true;
+    snapshot.runtime.restartRequired = false;
+    configureApi(snapshot);
+
+    render(<App />);
+
+    await screen.findByText("2 rules");
+    await user.click(screen.getByRole("button", { name: /HSMS/i }));
+
+    expect(screen.queryByText("restart required")).not.toBeInTheDocument();
+
+    const liveSnapshot = makeSnapshot();
+    liveSnapshot.runtime.dirty = false;
+    liveSnapshot.runtime.restartRequired = true;
+
+    await act(async () => {
+      MockEventSource.instances[0].emit(liveSnapshot);
+    });
+
+    expect(await screen.findByText("restart required")).toBeInTheDocument();
+  });
 });

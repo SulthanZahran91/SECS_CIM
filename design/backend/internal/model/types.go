@@ -12,11 +12,12 @@ type Snapshot struct {
 }
 
 type RuntimeState struct {
-	Listening  bool   `json:"listening"`
-	HSMSState  string `json:"hsmsState"`
-	ConfigFile string `json:"configFile"`
-	Dirty      bool   `json:"dirty"`
-	LastError  string `json:"lastError,omitempty"`
+	Listening       bool   `json:"listening"`
+	HSMSState       string `json:"hsmsState"`
+	ConfigFile      string `json:"configFile"`
+	Dirty           bool   `json:"dirty"`
+	RestartRequired bool   `json:"restartRequired"`
+	LastError       string `json:"lastError,omitempty"`
 }
 
 type HsmsConfig struct {

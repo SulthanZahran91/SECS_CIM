@@ -45,7 +45,8 @@ func (c *Controller) Start() (model.Snapshot, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	transport := hsms.NewManager(c.store.ConfigSnapshot().HSMS, hsms.Handlers{
+	appliedConfig := c.store.ConfigSnapshot().HSMS
+	transport := hsms.NewManager(appliedConfig, hsms.Handlers{
 		OnData:        c.handleDataMessage,
 		OnStateChange: c.updateRuntimeState,
 		OnError: func(err error) {
@@ -57,6 +58,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 	c.transport = transport
 	c.mu.Unlock()
 
+	c.store.RecordAppliedHSMS(appliedConfig)
 	c.store.SetRuntime(true, "NOT CONNECTED")
 
 	if err := transport.Start(ctx); err != nil {
@@ -301,6 +303,7 @@ func normalizeRuntimeError(err error) string {
 	case strings.Contains(lower, "broken pipe"),
 		strings.Contains(lower, "connection reset"),
 		strings.Contains(lower, "reset by peer"),
+		strings.Contains(lower, "forcibly closed"),
 		strings.Contains(lower, "use of closed network connection"):
 		return "connection dropped"
 	case strings.Contains(lower, "i/o timeout"):

@@ -10,12 +10,29 @@ import { normalizeSnapshot } from "./lib/normalizeSnapshot";
 import { ruleToYaml } from "./lib/ruleToYaml";
 import type { DetailTab, DeviceConfig, HsmsConfig, LeftTab, Rule, Snapshot } from "./types";
 
+function hsmsConnectionChanged(left: HsmsConfig, right: HsmsConfig): boolean {
+  return left.mode !== right.mode || left.ip !== right.ip || left.port !== right.port;
+}
+
 function markDirty(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
     runtime: {
       ...snapshot.runtime,
       dirty: true,
+    },
+  };
+}
+
+function markHsmsDirty(snapshot: Snapshot, hsms: HsmsConfig): Snapshot {
+  return {
+    ...snapshot,
+    hsms,
+    runtime: {
+      ...snapshot.runtime,
+      dirty: true,
+      restartRequired:
+        snapshot.runtime.restartRequired || (snapshot.runtime.listening && hsmsConnectionChanged(snapshot.hsms, hsms)),
     },
   };
 }
@@ -185,7 +202,7 @@ export default function App() {
 
   function handleHsmsChange(config: HsmsConfig) {
     applyOptimistic(
-      (current) => markDirty({ ...current, hsms: config }),
+      (current) => markHsmsDirty(current, config),
       () => api.updateHsms(config),
     );
   }
@@ -274,7 +291,7 @@ export default function App() {
             <HsmsTab
               hsms={snapshot.hsms}
               device={snapshot.device}
-              dirty={snapshot.runtime.dirty}
+              restartRequired={snapshot.runtime.restartRequired}
               onChangeHsms={handleHsmsChange}
               onChangeDevice={handleDeviceChange}
             />

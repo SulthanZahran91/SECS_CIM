@@ -2,7 +2,10 @@ package hsms
 
 import (
 	"bytes"
+	"net"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestFrameRoundTrip(t *testing.T) {
@@ -79,5 +82,75 @@ func TestItemEncodeDecodeAndRemoteCommandExtraction(t *testing.T) {
 	}
 	if got := message.Label(); got != "Remote Command: TRANSFER" {
 		t.Fatalf("expected label to include RCMD, got %q", got)
+	}
+}
+
+func TestReadFrameWithInterByteTimeoutAllowsIdleBeforeFirstByte(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	type result struct {
+		frame *Frame
+		err   error
+	}
+
+	done := make(chan result, 1)
+	go func() {
+		frame, err := ReadFrameWithInterByteTimeout(server, 20*time.Millisecond)
+		done <- result{frame: frame, err: err}
+	}()
+
+	time.Sleep(60 * time.Millisecond)
+	if err := WriteFrame(client, NewControlFrame(7, 0x01020304, STypeLinktestReq, 0)); err != nil {
+		t.Fatalf("write delayed frame: %v", err)
+	}
+
+	select {
+	case outcome := <-done:
+		if outcome.err != nil {
+			t.Fatalf("read delayed frame: %v", outcome.err)
+		}
+		if outcome.frame.SType != STypeLinktestReq {
+			t.Fatalf("expected delayed linktest.req, got %#v", outcome.frame)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for delayed frame")
+	}
+}
+
+func TestReadFrameWithInterByteTimeoutRejectsMidFrameStalls(t *testing.T) {
+	server, client := net.Pipe()
+	defer server.Close()
+	defer client.Close()
+
+	frame := NewControlFrame(7, 0x01020304, STypeLinktestReq, 0)
+	var buffer bytes.Buffer
+	if err := WriteFrame(&buffer, frame); err != nil {
+		t.Fatalf("encode stalled frame: %v", err)
+	}
+	raw := buffer.Bytes()
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ReadFrameWithInterByteTimeout(server, 20*time.Millisecond)
+		done <- err
+	}()
+
+	if _, err := client.Write(raw[:1]); err != nil {
+		t.Fatalf("write first frame byte: %v", err)
+	}
+	time.Sleep(60 * time.Millisecond)
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected mid-frame stall to time out")
+		}
+		if !strings.Contains(strings.ToLower(err.Error()), "timeout") {
+			t.Fatalf("expected timeout error, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for stalled frame error")
 	}
 }

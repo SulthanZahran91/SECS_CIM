@@ -12,6 +12,7 @@ export interface RuntimeState {
   hsmsState: string;
   configFile: string;
   dirty: boolean;
+  restartRequired: boolean;
   lastError?: string;
 }
 

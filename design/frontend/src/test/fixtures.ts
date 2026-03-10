@@ -6,6 +6,7 @@ const baseSnapshot: Snapshot = {
     hsmsState: "SELECTED",
     configFile: "stocker-sim.yaml",
     dirty: true,
+    restartRequired: false,
     lastError: "",
   },
   hsms: {

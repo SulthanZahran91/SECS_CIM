@@ -263,6 +263,48 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 	})
 }
 
+func TestControllerRestartClearsPendingConnectionChanges(t *testing.T) {
+	state := store.New()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "passive"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = freePort(t)
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+
+	if started.Runtime.RestartRequired {
+		t.Fatalf("expected fresh start to have no pending restart")
+	}
+
+	changed := hsmsConfig
+	changed.Port = freePort(t)
+	updated := state.UpdateHSMS(changed)
+	if !updated.Runtime.RestartRequired {
+		t.Fatalf("expected connection change to require restart while running")
+	}
+
+	stopped := controller.Stop()
+	if stopped.Runtime.RestartRequired {
+		t.Fatalf("expected stop to clear restartRequired")
+	}
+
+	restarted, err := controller.Start()
+	if err != nil {
+		t.Fatalf("restart controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if restarted.Runtime.RestartRequired {
+		t.Fatalf("expected restart to apply pending connection change")
+	}
+}
+
 func freePort(t *testing.T) int {
 	t.Helper()
 

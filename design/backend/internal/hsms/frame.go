@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"net"
+	"time"
 )
 
 const headerLength = 10
@@ -67,6 +69,39 @@ func ReadFrame(r io.Reader) (*Frame, error) {
 		return nil, err
 	}
 
+	return readDecodedFrame(r, lengthBytes)
+}
+
+func ReadFrameWithInterByteTimeout(conn net.Conn, timeout time.Duration) (*Frame, error) {
+	if timeout <= 0 {
+		return ReadFrame(conn)
+	}
+
+	lengthBytes := make([]byte, 4)
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		return nil, err
+	}
+	if _, err := io.ReadFull(conn, lengthBytes[:1]); err != nil {
+		return nil, err
+	}
+	if err := readFullWithInterByteTimeout(conn, lengthBytes[1:], timeout); err != nil {
+		return nil, err
+	}
+
+	payloadLength := binary.BigEndian.Uint32(lengthBytes)
+	if payloadLength < headerLength {
+		return nil, fmt.Errorf("invalid HSMS payload length %d", payloadLength)
+	}
+
+	payload := make([]byte, payloadLength)
+	if err := readFullWithInterByteTimeout(conn, payload, timeout); err != nil {
+		return nil, err
+	}
+
+	return decodeFrame(lengthBytes, payload)
+}
+
+func readDecodedFrame(r io.Reader, lengthBytes []byte) (*Frame, error) {
 	payloadLength := binary.BigEndian.Uint32(lengthBytes)
 	if payloadLength < headerLength {
 		return nil, fmt.Errorf("invalid HSMS payload length %d", payloadLength)
@@ -77,6 +112,10 @@ func ReadFrame(r io.Reader) (*Frame, error) {
 		return nil, err
 	}
 
+	return decodeFrame(lengthBytes, payload)
+}
+
+func decodeFrame(lengthBytes []byte, payload []byte) (*Frame, error) {
 	frame := &Frame{
 		SessionID:   binary.BigEndian.Uint16(payload[0:2]),
 		PType:       payload[4],
@@ -94,6 +133,24 @@ func ReadFrame(r io.Reader) (*Frame, error) {
 	}
 
 	return frame, nil
+}
+
+func readFullWithInterByteTimeout(conn net.Conn, buffer []byte, timeout time.Duration) error {
+	for len(buffer) > 0 {
+		if err := conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+			return err
+		}
+
+		n, err := conn.Read(buffer)
+		if n > 0 {
+			buffer = buffer[n:]
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	return conn.SetReadDeadline(time.Time{})
 }
 
 func WriteFrame(w io.Writer, frame *Frame) error {

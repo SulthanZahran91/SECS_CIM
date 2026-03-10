@@ -4,7 +4,7 @@ import type { DeviceConfig, HsmsConfig } from "../types";
 interface HsmsTabProps {
   hsms: HsmsConfig;
   device: DeviceConfig;
-  dirty: boolean;
+  restartRequired: boolean;
   onChangeHsms: (config: HsmsConfig) => void;
   onChangeDevice: (device: DeviceConfig) => void;
 }
@@ -14,10 +14,10 @@ function toNumber(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-export function HsmsTab({ hsms, device, dirty, onChangeHsms, onChangeDevice }: HsmsTabProps) {
+export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeDevice }: HsmsTabProps) {
   return (
     <div className="panel-scroll">
-      <SectionHeader right={dirty ? <span className="warning-text">restart required</span> : null}>
+      <SectionHeader right={restartRequired ? <span className="warning-text">restart required</span> : null}>
         Connection
       </SectionHeader>
       <div className="section-body">
@@ -196,4 +196,3 @@ export function HsmsTab({ hsms, device, dirty, onChangeHsms, onChangeDevice }: H
     </div>
   );
 }
-
