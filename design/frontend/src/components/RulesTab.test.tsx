@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -31,24 +31,22 @@ describe("RulesTab", () => {
 
     render(<RulesTabHarness />);
 
-    expect(screen.getByText("Generator-style event declaration")).toBeInTheDocument();
+    expect(screen.getByText("Actual Event Report Send structure")).toBeInTheDocument();
     expect(screen.getByDisplayValue("TRANSFER_INITIATED")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("U4:0")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "+ Report" }));
-    const rptidInput = await screen.findByLabelText("RPTID");
+    const rptidInput = await screen.findByLabelText("RPTID Item");
     await user.type(rptidInput, "5001");
 
-    await user.click(screen.getByRole("button", { name: "+ Variable" }));
-    const vidInput = await screen.findByPlaceholderText("e.g. 100");
-    const valueInput = await screen.findByPlaceholderText('e.g. A:LP01 or U4:100');
+    await user.click(screen.getByRole("button", { name: "+ Value" }));
+    const valueInput = await screen.findByPlaceholderText('e.g. A:LP01, U4:100, or L:[U4:1, A:"LP01"]');
 
-    await user.type(vidInput, "100");
-    await user.type(valueInput, "A:LP01");
+    fireEvent.change(valueInput, { target: { value: 'L:[U4:1, A:"LP01"]' } });
 
     expect(screen.getByDisplayValue("5001")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("100")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("A:LP01")).toBeInTheDocument();
+    expect(screen.getByDisplayValue('L:[U4:1, A:"LP01"]')).toBeInTheDocument();
     expect(screen.getByText(/1 RPT/)).toBeInTheDocument();
-    expect(screen.getByText(/1 VID/)).toBeInTheDocument();
+    expect(screen.getByText(/1 V/)).toBeInTheDocument();
   });
 });

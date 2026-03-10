@@ -4,7 +4,6 @@ import type {
   Rule,
   RuleAction,
   RuleActionReport,
-  RuleActionVariable,
   RuleCondition,
   Snapshot,
 } from "../types";
@@ -30,7 +29,7 @@ function normalizeRuleAction(action: RuleAction): RuleAction {
     ...action,
     reports: ensureArray<RuleActionReport>(action.reports).map((report) => ({
       ...report,
-      variables: ensureArray<RuleActionVariable>(report.variables),
+      values: ensureArray<string>(report.values),
     })),
   };
 }

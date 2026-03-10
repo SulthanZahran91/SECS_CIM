@@ -93,6 +93,7 @@ type RuleAction struct {
 	ID      string             `json:"id"`
 	DelayMS int                `json:"delayMs"`
 	Type    string             `json:"type"`
+	DataID  string             `json:"dataId,omitempty"`
 	CEID    string             `json:"ceid,omitempty"`
 	Reports []RuleActionReport `json:"reports,omitempty"`
 	Target  string             `json:"target,omitempty"`
@@ -100,13 +101,8 @@ type RuleAction struct {
 }
 
 type RuleActionReport struct {
-	RPTID     string               `json:"rptid,omitempty"`
-	Variables []RuleActionVariable `json:"variables"`
-}
-
-type RuleActionVariable struct {
-	VID   string `json:"vid,omitempty"`
-	Value string `json:"value,omitempty"`
+	RPTID  string   `json:"rptid,omitempty"`
+	Values []string `json:"values"`
 }
 
 type MessageRecord struct {
@@ -208,7 +204,7 @@ func cloneRuleActionReports(src []RuleActionReport) []RuleActionReport {
 	cloned := make([]RuleActionReport, 0, len(src))
 	for _, report := range src {
 		reportCopy := report
-		reportCopy.Variables = cloneSlice(report.Variables)
+		reportCopy.Values = cloneSlice(report.Values)
 		cloned = append(cloned, reportCopy)
 	}
 

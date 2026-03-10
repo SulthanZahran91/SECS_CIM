@@ -227,14 +227,12 @@ func TestRunScheduledBuildsStructuredEventReports(t *testing.T) {
 			ID:      "action-1",
 			DelayMS: 0,
 			Type:    "event",
-			CEID:    "1001",
+			DataID:  "U4:0",
+			CEID:    "U4:1001",
 			Reports: []model.RuleActionReport{
 				{
-					RPTID: "5001",
-					Variables: []model.RuleActionVariable{
-						{VID: "100", Value: "A:LP01"},
-						{VID: "101", Value: "7"},
-					},
+					RPTID:  "U4:5001",
+					Values: []string{"L:[U4:1, A:\"LP01\"]", "7"},
 				},
 			},
 		},
@@ -286,8 +284,14 @@ func TestRunScheduledBuildsStructuredEventReports(t *testing.T) {
 	if values.Type != hsms.ItemList || len(values.Children) != 2 {
 		t.Fatalf("expected two report values, got %#v", values)
 	}
-	if got := values.Children[0].ScalarValue(); got != "LP01" {
-		t.Fatalf("expected first report value LP01, got %q", got)
+	if values.Children[0].Type != hsms.ItemList || len(values.Children[0].Children) != 2 {
+		t.Fatalf("expected first report value to be a nested list item, got %#v", values.Children[0])
+	}
+	if got := values.Children[0].Children[0].ScalarValue(); got != "1" {
+		t.Fatalf("expected nested list first value 1, got %q", got)
+	}
+	if got := values.Children[0].Children[1].ScalarValue(); got != "LP01" {
+		t.Fatalf("expected nested list second value LP01, got %q", got)
 	}
 	if got := values.Children[1].ScalarValue(); got != "7" {
 		t.Fatalf("expected second report value 7, got %q", got)

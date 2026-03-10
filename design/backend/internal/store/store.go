@@ -261,8 +261,8 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 				updated.Actions[actionIndex].Reports = []model.RuleActionReport{}
 			}
 			for reportIndex := range updated.Actions[actionIndex].Reports {
-				if updated.Actions[actionIndex].Reports[reportIndex].Variables == nil {
-					updated.Actions[actionIndex].Reports[reportIndex].Variables = []model.RuleActionVariable{}
+				if updated.Actions[actionIndex].Reports[reportIndex].Values == nil {
+					updated.Actions[actionIndex].Reports[reportIndex].Values = []string{}
 				}
 			}
 		}
@@ -301,14 +301,15 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 			reports := make([]model.RuleActionReport, 0, len(action.Reports))
 			for _, report := range action.Reports {
 				reports = append(reports, model.RuleActionReport{
-					RPTID:     report.RPTID,
-					Variables: append(make([]model.RuleActionVariable, 0, len(report.Variables)), report.Variables...),
+					RPTID:  report.RPTID,
+					Values: append(make([]string, 0, len(report.Values)), report.Values...),
 				})
 			}
 			duplicate.Actions = append(duplicate.Actions, model.RuleAction{
 				ID:      s.nextActionIDValue(),
 				DelayMS: action.DelayMS,
 				Type:    action.Type,
+				DataID:  action.DataID,
 				CEID:    action.CEID,
 				Reports: reports,
 				Target:  action.Target,

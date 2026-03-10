@@ -89,6 +89,7 @@ export interface RuleAction {
   id: string;
   delayMs: number;
   type: "event" | "mutate";
+  dataId?: string;
   ceid?: string;
   reports?: RuleActionReport[];
   target?: string;
@@ -97,12 +98,7 @@ export interface RuleAction {
 
 export interface RuleActionReport {
   rptid: string;
-  variables: RuleActionVariable[];
-}
-
-export interface RuleActionVariable {
-  vid: string;
-  value: string;
+  values: string[];
 }
 
 export interface MessageRecord {

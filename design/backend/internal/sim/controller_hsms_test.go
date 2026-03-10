@@ -30,13 +30,12 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 			ID:      "action-1",
 			DelayMS: 20,
 			Type:    "event",
-			CEID:    "1001",
+			DataID:  "U4:0",
+			CEID:    "U4:1001",
 			Reports: []model.RuleActionReport{
 				{
-					RPTID: "5001",
-					Variables: []model.RuleActionVariable{
-						{VID: "100", Value: "A:LP01"},
-					},
+					RPTID:  "U4:5001",
+					Values: []string{"L:[U4:1, A:\"LP01\"]"},
 				},
 			},
 		},
@@ -121,12 +120,15 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	if got := firstEvent.Body.Children[2].Children[0].Children[0].ScalarValue(); got != "5001" {
 		t.Fatalf("expected structured RPTID 5001, got %q", got)
 	}
-	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].ScalarValue(); got != "LP01" {
-		t.Fatalf("expected structured VID value LP01, got %q", got)
+	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].Children[0].ScalarValue(); got != "1" {
+		t.Fatalf("expected first nested V item value 1, got %q", got)
+	}
+	if got := firstEvent.Body.Children[2].Children[0].Children[1].Children[0].Children[1].ScalarValue(); got != "LP01" {
+		t.Fatalf("expected second nested V item value LP01, got %q", got)
 	}
 
 	secondEvent := readMessage(t, conn)
-	if ceid, ok := hsms.ExtractSingleASCII(secondEvent); !ok || ceid != "TRANSFER_COMPLETED" {
+	if ceid, ok := hsms.ExtractS6F11CEID(secondEvent); !ok || ceid != "TRANSFER_COMPLETED" {
 		t.Fatalf("expected TRANSFER_COMPLETED event body, got %#v", secondEvent)
 	}
 

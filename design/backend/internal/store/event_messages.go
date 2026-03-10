@@ -49,27 +49,28 @@ func buildScheduledEventMessage(sessionID uint16, messageID string, action sched
 }
 
 func buildEventBody(action model.RuleAction) (hsms.Item, string, error) {
-	if !eventUsesStructuredBody(action) {
-		return hsms.List(hsms.ASCII(action.CEID)), action.CEID, nil
+	dataIDItem, _, err := parseGeneratorItem(firstNonEmpty(action.DataID, "U4:0"))
+	if err != nil {
+		return hsms.Item{}, "", fmt.Errorf("parse event DATAID %q: %w", action.DataID, err)
 	}
 
-	ceidItem, label, err := parseGeneratorScalar(action.CEID)
+	ceidItem, label, err := parseGeneratorItem(action.CEID)
 	if err != nil {
 		return hsms.Item{}, "", fmt.Errorf("parse event CEID %q: %w", action.CEID, err)
 	}
 
 	reports := make([]hsms.Item, 0, len(action.Reports))
 	for _, report := range action.Reports {
-		rptidItem, _, err := parseGeneratorScalar(firstNonEmpty(report.RPTID, "0"))
+		rptidItem, _, err := parseGeneratorItem(firstNonEmpty(report.RPTID, "U4:0"))
 		if err != nil {
 			return hsms.Item{}, "", fmt.Errorf("parse event RPTID %q: %w", report.RPTID, err)
 		}
 
-		values := make([]hsms.Item, 0, len(report.Variables))
-		for _, variable := range report.Variables {
-			valueItem, _, err := parseGeneratorScalar(variable.Value)
+		values := make([]hsms.Item, 0, len(report.Values))
+		for _, value := range report.Values {
+			valueItem, _, err := parseGeneratorItem(value)
 			if err != nil {
-				return hsms.Item{}, "", fmt.Errorf("parse VID %q value %q: %w", variable.VID, variable.Value, err)
+				return hsms.Item{}, "", fmt.Errorf("parse report value %q: %w", value, err)
 			}
 			values = append(values, valueItem)
 		}
@@ -81,43 +82,30 @@ func buildEventBody(action model.RuleAction) (hsms.Item, string, error) {
 	}
 
 	return hsms.List(
-		hsms.U4(0),
+		dataIDItem,
 		ceidItem,
 		hsms.List(reports...),
 	), label, nil
 }
 
-func eventUsesStructuredBody(action model.RuleAction) bool {
-	if len(action.Reports) > 0 {
-		return true
-	}
-
-	value := strings.TrimSpace(action.CEID)
-	if value == "" {
-		return false
-	}
-	if _, err := strconv.ParseUint(value, 10, 32); err == nil {
-		return true
-	}
-
-	for _, prefix := range []string{"A:", "U1:", "U2:", "U4:", "BOOL:", "B:"} {
-		if hasGeneratorPrefix(value, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
-func parseGeneratorScalar(raw string) (hsms.Item, string, error) {
+func parseGeneratorItem(raw string) (hsms.Item, string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return hsms.ASCII(""), "", nil
 	}
+	if hasGeneratorPrefix(value, "L:[") {
+		return parseGeneratorList(value)
+	}
+	return parseGeneratorScalar(value)
+}
 
+func parseGeneratorScalar(value string) (hsms.Item, string, error) {
 	switch {
 	case hasGeneratorPrefix(value, "A:"):
-		payload := strings.TrimSpace(value[len("A:"):])
+		payload, err := parseASCIIValue(value[len("A:"):])
+		if err != nil {
+			return hsms.Item{}, "", err
+		}
 		return hsms.ASCII(payload), payload, nil
 	case hasGeneratorPrefix(value, "U1:"):
 		parsed, err := parseUint(value[len("U1:"):], 8)
@@ -157,8 +145,48 @@ func parseGeneratorScalar(raw string) (hsms.Item, string, error) {
 	}
 }
 
+func parseGeneratorList(value string) (hsms.Item, string, error) {
+	if !strings.HasSuffix(value, "]") {
+		return hsms.Item{}, "", fmt.Errorf("list item must end with ]")
+	}
+
+	inner := strings.TrimSpace(value[len("L:[") : len(value)-1])
+	if inner == "" {
+		return hsms.List(), "", nil
+	}
+
+	parts, err := splitTopLevelListItems(inner)
+	if err != nil {
+		return hsms.Item{}, "", err
+	}
+
+	children := make([]hsms.Item, 0, len(parts))
+	for _, part := range parts {
+		child, _, err := parseGeneratorItem(part)
+		if err != nil {
+			return hsms.Item{}, "", err
+		}
+		children = append(children, child)
+	}
+
+	return hsms.List(children...), "", nil
+}
+
 func hasGeneratorPrefix(value string, prefix string) bool {
 	return len(value) >= len(prefix) && strings.EqualFold(value[:len(prefix)], prefix)
+}
+
+func parseASCIIValue(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+		unquoted, err := strconv.Unquote(value)
+		if err != nil {
+			return "", err
+		}
+		return unquoted, nil
+	}
+
+	return value, nil
 }
 
 func parseUint(raw string, bits int) (uint64, error) {
@@ -193,4 +221,52 @@ func parseBinaryBytes(raw string) ([]byte, error) {
 	}
 
 	return bytes, nil
+}
+
+func splitTopLevelListItems(raw string) ([]string, error) {
+	items := []string{}
+	start := 0
+	depth := 0
+	inQuote := false
+	escaped := false
+
+	for index, char := range raw {
+		switch {
+		case inQuote && escaped:
+			escaped = false
+		case inQuote && char == '\\':
+			escaped = true
+		case inQuote && char == '"':
+			inQuote = false
+		case !inQuote && char == '"':
+			inQuote = true
+		case !inQuote && char == '[':
+			depth++
+		case !inQuote && char == ']':
+			depth--
+			if depth < 0 {
+				return nil, fmt.Errorf("unexpected closing ] in list expression")
+			}
+		case !inQuote && char == ',' && depth == 0:
+			item := strings.TrimSpace(raw[start:index])
+			if item != "" {
+				items = append(items, item)
+			}
+			start = index + 1
+		}
+	}
+
+	if inQuote {
+		return nil, fmt.Errorf("unterminated string in list expression")
+	}
+	if depth != 0 {
+		return nil, fmt.Errorf("unbalanced list brackets in list expression")
+	}
+
+	tail := strings.TrimSpace(raw[start:])
+	if tail != "" {
+		items = append(items, tail)
+	}
+
+	return items, nil
 }

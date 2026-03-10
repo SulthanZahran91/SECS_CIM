@@ -166,13 +166,12 @@ func TestSaveAndReloadPreservesStructuredEventReports(t *testing.T) {
 			ID:      "action-1",
 			DelayMS: 25,
 			Type:    "event",
-			CEID:    "1001",
+			DataID:  "U4:0",
+			CEID:    "U4:1001",
 			Reports: []model.RuleActionReport{
 				{
-					RPTID: "5001",
-					Variables: []model.RuleActionVariable{
-						{VID: "100", Value: "A:LP01"},
-					},
+					RPTID:  "U4:5001",
+					Values: []string{"L:[U4:1, A:\"LP01\"]"},
 				},
 			},
 		},
@@ -191,14 +190,14 @@ func TestSaveAndReloadPreservesStructuredEventReports(t *testing.T) {
 	}
 
 	savedAction := reloaded.Rules[0].Actions[0]
-	if savedAction.CEID != "1001" || len(savedAction.Reports) != 1 {
+	if savedAction.DataID != "U4:0" || savedAction.CEID != "U4:1001" || len(savedAction.Reports) != 1 {
 		t.Fatalf("expected structured event report after reload, got %#v", savedAction)
 	}
-	if savedAction.Reports[0].RPTID != "5001" || len(savedAction.Reports[0].Variables) != 1 {
-		t.Fatalf("expected structured report variables after reload, got %#v", savedAction.Reports[0])
+	if savedAction.Reports[0].RPTID != "U4:5001" || len(savedAction.Reports[0].Values) != 1 {
+		t.Fatalf("expected structured report values after reload, got %#v", savedAction.Reports[0])
 	}
-	if savedAction.Reports[0].Variables[0].VID != "100" || savedAction.Reports[0].Variables[0].Value != "A:LP01" {
-		t.Fatalf("expected VID/value payload after reload, got %#v", savedAction.Reports[0].Variables[0])
+	if savedAction.Reports[0].Values[0] != "L:[U4:1, A:\"LP01\"]" {
+		t.Fatalf("expected structured V payload after reload, got %#v", savedAction.Reports[0].Values)
 	}
 }
 
@@ -432,12 +431,12 @@ rules:
     events:
       - delay_ms: 10
         type: event
-        ceid: "1001"
+        data_id: "U4:0"
+        ceid: "U4:1001"
         reports:
-          - rptid: "5001"
-            variables:
-              - vid: "100"
-                value: "A:LP01"
+          - rptid: "U4:5001"
+            values:
+              - "L:[U4:1, A:\"LP01\"]"
 `), 0o644); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
@@ -463,11 +462,77 @@ rules:
 	if len(snapshot.Rules[0].Actions) != 1 || snapshot.Rules[0].Actions[0].ID != "action-1" {
 		t.Fatalf("expected file actions to load with generated IDs, got %#v", snapshot.Rules[0].Actions)
 	}
-	if len(snapshot.Rules[0].Actions[0].Reports) != 1 || snapshot.Rules[0].Actions[0].Reports[0].RPTID != "5001" {
+	if snapshot.Rules[0].Actions[0].DataID != "U4:0" {
+		t.Fatalf("expected file action data_id to load, got %#v", snapshot.Rules[0].Actions[0])
+	}
+	if len(snapshot.Rules[0].Actions[0].Reports) != 1 || snapshot.Rules[0].Actions[0].Reports[0].RPTID != "U4:5001" {
 		t.Fatalf("expected structured event reports from file, got %#v", snapshot.Rules[0].Actions[0])
 	}
-	if len(snapshot.Rules[0].Actions[0].Reports[0].Variables) != 1 || snapshot.Rules[0].Actions[0].Reports[0].Variables[0].VID != "100" {
-		t.Fatalf("expected structured event variables from file, got %#v", snapshot.Rules[0].Actions[0].Reports[0].Variables)
+	if len(snapshot.Rules[0].Actions[0].Reports[0].Values) != 1 || snapshot.Rules[0].Actions[0].Reports[0].Values[0] != "L:[U4:1, A:\"LP01\"]" {
+		t.Fatalf("expected structured event values from file, got %#v", snapshot.Rules[0].Actions[0].Reports[0].Values)
+	}
+}
+
+func TestNewFromFileMapsLegacyVariableEntriesToReportValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-sim.yaml")
+	if err := os.WriteFile(path, []byte(`
+hsms:
+  mode: passive
+  ip: "127.0.0.1"
+  port: 5000
+  session_id: 1
+  device_id: 0
+  timers:
+    t3: 45
+    t5: 10
+    t6: 5
+    t7: 10
+    t8: 5
+device:
+  name: legacy-load
+  protocol: e88
+  mdln: LEGACY
+  softrev: 1.0.0
+handshake:
+  auto_s1f13: true
+  auto_s1f1: true
+  auto_s2f25: false
+  auto_host_startup: false
+initial_state:
+  mode: online-remote
+  ports: {}
+  carriers: {}
+rules:
+  - name: legacy rule
+    match:
+      stream: 2
+      function: 41
+      rcmd: TRANSFER
+    reply:
+      stream: 2
+      function: 42
+      ack: 0
+    events:
+      - delay_ms: 10
+        type: event
+        ceid: "U4:1001"
+        reports:
+          - rptid: "U4:5001"
+            variables:
+              - vid: "100"
+                value: "A:LP01"
+`), 0o644); err != nil {
+		t.Fatalf("write legacy config file: %v", err)
+	}
+
+	store, err := NewFromFile(path)
+	if err != nil {
+		t.Fatalf("create store from legacy file: %v", err)
+	}
+
+	values := store.Snapshot().Rules[0].Actions[0].Reports[0].Values
+	if len(values) != 1 || values[0] != "A:LP01" {
+		t.Fatalf("expected legacy variables to map into report values, got %#v", values)
 	}
 }
 

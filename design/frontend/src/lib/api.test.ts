@@ -74,7 +74,7 @@ describe("api client", () => {
         reports: [
           {
             rptid: "5001",
-            variables: null as never,
+            values: null as never,
           },
         ],
       },
@@ -104,7 +104,7 @@ describe("api client", () => {
     const result = await api.bootstrap();
 
     expect(result.rules[0].conditions).toEqual([]);
-    expect(result.rules[0].actions[0].reports?.[0].variables).toEqual([]);
+    expect(result.rules[0].actions[0].reports?.[0].values).toEqual([]);
     expect(result.rules[1].actions).toEqual([]);
     expect(result.messages).toEqual([]);
   });

@@ -27,20 +27,20 @@ export function ruleToYaml(rule: Rule): string {
               "      type: " + quote(action.type),
             ];
             if (action.type === "event") {
+              lines.push("      data_id: " + quote(action.dataId ?? "U4:0"));
               lines.push("      ceid: " + quote(action.ceid ?? ""));
               if ((action.reports?.length ?? 0) > 0) {
                 lines.push("      reports:");
                 for (const report of action.reports ?? []) {
                   lines.push("        - rptid: " + quote(report.rptid ?? ""));
-                  if (report.variables.length === 0) {
-                    lines.push("          variables: []");
+                  if (report.values.length === 0) {
+                    lines.push("          values: []");
                     continue;
                   }
 
-                  lines.push("          variables:");
-                  for (const variable of report.variables) {
-                    lines.push("            - vid: " + quote(variable.vid ?? ""));
-                    lines.push("              value: " + quote(variable.value ?? ""));
+                  lines.push("          values:");
+                  for (const value of report.values) {
+                    lines.push("            - " + quote(value ?? ""));
                   }
                 }
               }

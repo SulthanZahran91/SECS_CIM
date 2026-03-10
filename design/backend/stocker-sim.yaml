@@ -54,12 +54,12 @@ rules:
     events:
       - delay_ms: 300
         type: event
-        ceid: "1001"
+        data_id: "U4:0"
+        ceid: "U4:1001"
         reports:
-          - rptid: "5001"
-            variables:
-              - vid: "100"
-                value: "A:LP01"
+          - rptid: "U4:5001"
+            values:
+              - "L:[U4:1, A:\"LP01\"]"
       - delay_ms: 1200
         type: mutate
         target: carriers.CARR001.location
@@ -70,12 +70,12 @@ rules:
         value: empty
       - delay_ms: 1200
         type: event
-        ceid: "1002"
+        data_id: "U4:0"
+        ceid: "U4:1002"
         reports:
-          - rptid: "5002"
-            variables:
-              - vid: "100"
-                value: "A:SHELF_A01"
+          - rptid: "U4:5002"
+            values:
+              - "L:[U4:1, A:\"SHELF_A01\"]"
   - name: reject when blocked
     enabled: true
     match:
