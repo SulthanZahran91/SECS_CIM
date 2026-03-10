@@ -8,8 +8,12 @@ import { normalizeSnapshot } from "./normalizeSnapshot";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
+function apiPath(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(apiPath(path), {
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
@@ -38,6 +42,7 @@ async function requestSnapshot(path: string, init?: RequestInit): Promise<Snapsh
 }
 
 export const api = {
+  eventsUrl: () => apiPath("/api/events"),
   bootstrap: () => requestSnapshot("/api/bootstrap"),
   toggleRuntime: () => requestSnapshot("/api/runtime/toggle", { method: "POST" }),
   saveConfig: () => requestSnapshot("/api/config/save", { method: "POST" }),

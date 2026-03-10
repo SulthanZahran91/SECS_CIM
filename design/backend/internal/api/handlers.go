@@ -36,6 +36,7 @@ func Register(mux *http.ServeMux, state *store.Store, simulator *sim.Controller)
 
 	mux.Handle("/api/health", withCORS(http.HandlerFunc(handler.health)))
 	mux.Handle("/api/bootstrap", withCORS(http.HandlerFunc(handler.bootstrap)))
+	mux.Handle("/api/events", withCORS(http.HandlerFunc(handler.events)))
 	mux.Handle("/api/config", withCORS(http.HandlerFunc(handler.config)))
 	mux.Handle("/api/state", withCORS(http.HandlerFunc(handler.state)))
 	mux.Handle("/api/runtime/toggle", withCORS(http.HandlerFunc(handler.toggleRuntime)))

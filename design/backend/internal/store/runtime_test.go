@@ -3,7 +3,21 @@ package store
 import (
 	"testing"
 	"time"
+
+	"secsim/design/backend/internal/model"
 )
+
+func awaitSnapshotUpdate(t *testing.T, updates <-chan model.Snapshot) model.Snapshot {
+	t.Helper()
+
+	select {
+	case snapshot := <-updates:
+		return snapshot
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for snapshot update")
+		return model.Snapshot{}
+	}
+}
 
 func TestProcessInboundMatchesFirstRuleAndSchedulesActions(t *testing.T) {
 	store := New()
@@ -117,6 +131,44 @@ func TestProcessInboundCapturesDiagnosticsForNearMiss(t *testing.T) {
 	}
 }
 
+func TestProcessInboundSupportsGenericMessageFieldConditions(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	rule := store.Snapshot().Rules[0]
+	rule.Conditions = []model.RuleCondition{
+		{Field: "DATA.RCMD", Value: "TRANSFER"},
+		{Field: "fields.SourcePort", Value: "LP01"},
+		{Field: "CarrierID", Value: "CARR001"},
+		{Field: "state.ports.LP01", Value: "occupied"},
+	}
+	if _, err := store.UpdateRule(rule); err != nil {
+		t.Fatalf("update rule: %v", err)
+	}
+
+	now := time.Date(2026, time.March, 10, 16, 12, 0, 0, time.UTC)
+	result := store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+			"CarrierID":  "CARR001",
+		},
+	}, now)
+
+	if result.MatchedRuleID != "rule-1" {
+		t.Fatalf("expected generic field conditions to match rule-1, got %#v", result)
+	}
+
+	for _, evaluation := range result.Snapshot.Messages[0].Evaluations {
+		if !evaluation.Passed {
+			t.Fatalf("expected generic field evaluation to pass, got %#v", result.Snapshot.Messages[0].Evaluations)
+		}
+	}
+}
+
 func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
 	store := New()
 	store.ClearLog()
@@ -204,5 +256,45 @@ func TestRuntimeMutationsDoNotPersistAsConfig(t *testing.T) {
 	}
 	if reloaded.State.Carriers["CARR001"].Location != "LP01" {
 		t.Fatalf("expected reload to restore configured carrier location, got %#v", reloaded.State.Carriers)
+	}
+}
+
+func TestRuntimePublishesSnapshotUpdatesForInboundAndScheduledActions(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	updates, initial, unsubscribe := store.SubscribeSnapshots()
+	defer unsubscribe()
+
+	if len(initial.Messages) != 0 {
+		t.Fatalf("expected subscription to start from cleared log, got %d messages", len(initial.Messages))
+	}
+
+	now := time.Date(2026, time.March, 10, 16, 25, 0, 0, time.UTC)
+	store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+	}, now)
+
+	afterInbound := awaitSnapshotUpdate(t, updates)
+	if len(afterInbound.Messages) != 2 {
+		t.Fatalf("expected inbound update to include request and reply, got %d", len(afterInbound.Messages))
+	}
+
+	if _, err := store.RunScheduled(now.Add(1200 * time.Millisecond)); err != nil {
+		t.Fatalf("run scheduled actions: %v", err)
+	}
+
+	afterScheduled := awaitSnapshotUpdate(t, updates)
+	if afterScheduled.State.Ports["LP01"] != "empty" {
+		t.Fatalf("expected scheduled mutation to publish updated state, got %#v", afterScheduled.State.Ports)
+	}
+	if len(afterScheduled.Messages) != 4 {
+		t.Fatalf("expected scheduled update to append emitted events, got %d", len(afterScheduled.Messages))
 	}
 }

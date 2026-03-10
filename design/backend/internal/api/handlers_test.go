@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"secsim/design/backend/internal/model"
 	"secsim/design/backend/internal/sim"
@@ -70,6 +72,55 @@ func decodeMap(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any
 	return payload
 }
 
+func decodeSSESnapshot(t *testing.T, reader *bufio.Reader) model.Snapshot {
+	t.Helper()
+
+	type result struct {
+		snapshot model.Snapshot
+		err      error
+	}
+
+	done := make(chan result, 1)
+	go func() {
+		var data strings.Builder
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				done <- result{err: err}
+				return
+			}
+
+			line = strings.TrimRight(line, "\r\n")
+			if line == "" {
+				if data.Len() == 0 {
+					continue
+				}
+
+				var snapshot model.Snapshot
+				done <- result{
+					snapshot: snapshot,
+					err:      json.Unmarshal([]byte(data.String()), &snapshot),
+				}
+				return
+			}
+			if strings.HasPrefix(line, "data: ") {
+				data.WriteString(strings.TrimPrefix(line, "data: "))
+			}
+		}
+	}()
+
+	select {
+	case result := <-done:
+		if result.err != nil {
+			t.Fatalf("decode SSE snapshot: %v", result.err)
+		}
+		return result.snapshot
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for SSE snapshot")
+		return model.Snapshot{}
+	}
+}
+
 func TestHealthEndpointReturnsJSONAndCORSHeaders(t *testing.T) {
 	mux := newTestMux()
 
@@ -95,6 +146,38 @@ func TestOptionsRequestReturnsNoContent(t *testing.T) {
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for preflight, got %d", recorder.Code)
+	}
+}
+
+func TestEventsEndpointStreamsInitialAndUpdatedSnapshots(t *testing.T) {
+	state := store.New()
+	mux := newTestMuxWithStore(state)
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/api/events")
+	if err != nil {
+		t.Fatalf("open events stream: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 from events stream, got %d", response.StatusCode)
+	}
+	if got := response.Header.Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("expected text/event-stream content type, got %q", got)
+	}
+
+	reader := bufio.NewReader(response.Body)
+	initial := decodeSSESnapshot(t, reader)
+	if len(initial.Messages) == 0 {
+		t.Fatalf("expected initial stream snapshot to include seeded messages")
+	}
+
+	state.ClearLog()
+	updated := decodeSSESnapshot(t, reader)
+	if len(updated.Messages) != 0 {
+		t.Fatalf("expected updated stream snapshot after log clear, got %d messages", len(updated.Messages))
 	}
 }
 

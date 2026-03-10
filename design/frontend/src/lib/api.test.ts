@@ -30,6 +30,10 @@ describe("api client", () => {
     );
   });
 
+  it("builds the live events URL from the API base", () => {
+    expect(api.eventsUrl()).toBe("/api/events");
+  });
+
   it("sends JSON bodies for rule updates", async () => {
     const snapshot = makeSnapshot();
     const rule = snapshot.rules[0];

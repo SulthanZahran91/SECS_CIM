@@ -35,6 +35,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (typeof EventSource === "undefined") {
+      return undefined;
+    }
+
+    const stream = new EventSource(api.eventsUrl());
+    stream.onmessage = (event) => {
+      try {
+        const nextSnapshot = JSON.parse(event.data) as Snapshot;
+        replaceSnapshot(nextSnapshot);
+        setError(null);
+      } catch {
+        // Ignore malformed stream payloads and keep the last good snapshot.
+      }
+    };
+
+    return () => {
+      stream.close();
+    };
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!snapshot) {
         return;

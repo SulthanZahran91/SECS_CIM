@@ -20,6 +20,7 @@ type Store struct {
 	liveState     model.StateSnapshot
 	messages      []model.MessageRecord
 	pending       []scheduledAction
+	subscribers   map[chan model.Snapshot]struct{}
 	nextRuleID    int
 	nextActionID  int
 	nextMessageID int
@@ -63,12 +64,13 @@ func NewFromFile(path string) (*Store, error) {
 
 func newStore(snapshot model.Snapshot, configPath string) *Store {
 	store := &Store{
-		config:     cloneConfigSnapshot(snapshot),
-		baseline:   cloneConfigSnapshot(snapshot),
-		liveState:  normalizeState(snapshot.State),
-		messages:   cloneMessages(snapshot.Messages),
-		pending:    nil,
-		configPath: configPath,
+		config:      cloneConfigSnapshot(snapshot),
+		baseline:    cloneConfigSnapshot(snapshot),
+		liveState:   normalizeState(snapshot.State),
+		messages:    cloneMessages(snapshot.Messages),
+		pending:     nil,
+		subscribers: map[chan model.Snapshot]struct{}{},
+		configPath:  configPath,
 	}
 	store.updateDirtyLocked()
 	store.resetIDCountersLocked()
@@ -97,7 +99,7 @@ func (s *Store) ToggleRuntime() model.Snapshot {
 	nextListening := !s.config.Runtime.Listening
 	s.setRuntimeLocked(nextListening, "NOT CONNECTED")
 
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) SetRuntime(listening bool, hsmsState string) model.Snapshot {
@@ -105,7 +107,7 @@ func (s *Store) SetRuntime(listening bool, hsmsState string) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.setRuntimeLocked(listening, hsmsState)
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) SetHSMSState(hsmsState string) model.Snapshot {
@@ -113,7 +115,7 @@ func (s *Store) SetHSMSState(hsmsState string) model.Snapshot {
 	defer s.mu.Unlock()
 
 	s.config.Runtime.HSMSState = hsmsState
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) Save() (model.Snapshot, error) {
@@ -129,7 +131,7 @@ func (s *Store) Save() (model.Snapshot, error) {
 	s.baseline = cloneConfigSnapshot(s.config)
 	s.updateDirtyLocked()
 
-	return s.snapshotLocked(), nil
+	return s.snapshotAndPublishLocked(), nil
 }
 
 func (s *Store) Reload() (model.Snapshot, error) {
@@ -161,7 +163,7 @@ func (s *Store) Reload() (model.Snapshot, error) {
 	s.updateDirtyLocked()
 	s.resetIDCountersLocked()
 
-	return s.snapshotLocked(), nil
+	return s.snapshotAndPublishLocked(), nil
 }
 
 func (s *Store) ClearLog() model.Snapshot {
@@ -171,7 +173,7 @@ func (s *Store) ClearLog() model.Snapshot {
 	s.messages = []model.MessageRecord{}
 	s.resetIDCountersLocked()
 
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) UpdateHSMS(config model.HsmsConfig) model.Snapshot {
@@ -181,7 +183,7 @@ func (s *Store) UpdateHSMS(config model.HsmsConfig) model.Snapshot {
 	s.config.HSMS = config
 	s.updateDirtyLocked()
 
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) UpdateDevice(device model.DeviceConfig) model.Snapshot {
@@ -191,7 +193,7 @@ func (s *Store) UpdateDevice(device model.DeviceConfig) model.Snapshot {
 	s.config.Device = device
 	s.updateDirtyLocked()
 
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) NewRule() model.Snapshot {
@@ -218,7 +220,7 @@ func (s *Store) NewRule() model.Snapshot {
 	s.config.Rules = append(s.config.Rules, newRule)
 	s.updateDirtyLocked()
 
-	return s.snapshotLocked()
+	return s.snapshotAndPublishLocked()
 }
 
 func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
@@ -243,7 +245,7 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 		s.config.Rules[index] = updated
 		s.updateDirtyLocked()
 
-		return s.snapshotLocked(), nil
+		return s.snapshotAndPublishLocked(), nil
 	}
 
 	return model.Snapshot{}, ErrRuleNotFound
@@ -284,7 +286,7 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 		s.config.Rules = nextRules
 		s.updateDirtyLocked()
 
-		return s.snapshotLocked(), nil
+		return s.snapshotAndPublishLocked(), nil
 	}
 
 	return model.Snapshot{}, ErrRuleNotFound
@@ -302,7 +304,7 @@ func (s *Store) DeleteRule(id string) (model.Snapshot, error) {
 		s.config.Rules = append(s.config.Rules[:index], s.config.Rules[index+1:]...)
 		s.updateDirtyLocked()
 
-		return s.snapshotLocked(), nil
+		return s.snapshotAndPublishLocked(), nil
 	}
 
 	return model.Snapshot{}, ErrRuleNotFound
@@ -334,7 +336,7 @@ func (s *Store) MoveRule(id string, direction string) (model.Snapshot, error) {
 		s.config.Rules[index], s.config.Rules[target] = s.config.Rules[target], s.config.Rules[index]
 		s.updateDirtyLocked()
 
-		return s.snapshotLocked(), nil
+		return s.snapshotAndPublishLocked(), nil
 	}
 
 	return model.Snapshot{}, ErrRuleNotFound
@@ -344,6 +346,12 @@ func (s *Store) snapshotLocked() model.Snapshot {
 	snapshot := model.CloneSnapshot(s.config)
 	snapshot.State = normalizeState(s.liveState)
 	snapshot.Messages = cloneMessages(s.messages)
+	return snapshot
+}
+
+func (s *Store) snapshotAndPublishLocked() model.Snapshot {
+	snapshot := s.snapshotLocked()
+	s.publishSnapshotLocked(snapshot)
 	return snapshot
 }
 

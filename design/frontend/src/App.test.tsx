@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi, type Mocked } from "vitest";
 import App from "./App";
@@ -7,6 +7,7 @@ import { makeSnapshot } from "./test/fixtures";
 
 vi.mock("./lib/api", () => ({
   api: {
+    eventsUrl: vi.fn(() => "/api/events"),
     bootstrap: vi.fn(),
     toggleRuntime: vi.fn(),
     saveConfig: vi.fn(),
@@ -23,6 +24,26 @@ vi.mock("./lib/api", () => ({
 }));
 
 const mockedApi = api as Mocked<typeof api>;
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  readonly close = vi.fn();
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent<string>);
+  }
+
+  static reset() {
+    MockEventSource.instances = [];
+  }
+}
 
 function configureApi(snapshot = makeSnapshot()) {
   mockedApi.bootstrap.mockResolvedValue(snapshot);
@@ -68,6 +89,8 @@ function configureApi(snapshot = makeSnapshot()) {
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    MockEventSource.reset();
+    vi.stubGlobal("EventSource", MockEventSource);
     configureApi();
   });
 
@@ -122,5 +145,43 @@ describe("App", () => {
 
     expect(await screen.findByText("stocker-A")).toBeInTheDocument();
     expect(screen.getByText("online-remote")).toBeInTheDocument();
+  });
+
+  it("subscribes to live snapshot updates and refreshes runtime state", async () => {
+    render(<App />);
+
+    await screen.findByText("2 rules");
+    expect(MockEventSource.instances).toHaveLength(1);
+    expect(MockEventSource.instances[0].url).toBe("/api/events");
+
+    const liveSnapshot = makeSnapshot();
+    liveSnapshot.runtime.hsmsState = "NOT CONNECTED";
+    liveSnapshot.state.mode = "online-local";
+    liveSnapshot.messages.push({
+      id: "msg-3",
+      timestamp: "14:32:06.100",
+      direction: "OUT",
+      sf: "S6F11",
+      label: "TRANSFER_COMPLETED",
+      matchedRule: "accept transfer",
+      matchedRuleId: "rule-1",
+      detail: {
+        stream: 6,
+        function: 11,
+        wbit: true,
+        body: "<A \"TRANSFER_COMPLETED\">",
+        rawSml: "S6F11 W <A \"TRANSFER_COMPLETED\">",
+      },
+      evaluations: [],
+    });
+
+    await act(async () => {
+      MockEventSource.instances[0].emit(liveSnapshot);
+    });
+
+    expect(await screen.findByText("Messages: 3")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    expect(await screen.findByText("online-local")).toBeInTheDocument();
   });
 });

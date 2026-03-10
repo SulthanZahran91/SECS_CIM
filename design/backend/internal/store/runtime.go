@@ -83,7 +83,7 @@ func (s *Store) ProcessInbound(message InboundMessage, now time.Time) RuntimeRes
 				})
 			}
 			sortScheduledActions(s.pending)
-			result.Snapshot = s.snapshotLocked()
+			result.Snapshot = s.snapshotAndPublishLocked()
 			return result
 		}
 
@@ -94,7 +94,7 @@ func (s *Store) ProcessInbound(message InboundMessage, now time.Time) RuntimeRes
 
 	inboundRecord.Evaluations = diagnostics
 	s.messages = append(s.messages, inboundRecord)
-	result.Snapshot = s.snapshotLocked()
+	result.Snapshot = s.snapshotAndPublishLocked()
 	return result
 }
 
@@ -106,6 +106,7 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 		Emitted:      []model.MessageRecord{},
 		StateChanges: []StateChange{},
 	}
+	changed := false
 
 	remaining := make([]scheduledAction, 0, len(s.pending))
 	for _, pending := range s.pending {
@@ -119,21 +120,35 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 			record := s.newEventRecord(pending, pending.DueAt)
 			s.messages = append(s.messages, record)
 			result.Emitted = append(result.Emitted, record)
+			changed = true
 		case "mutate":
 			change, err := applyMutation(&s.liveState, pending.Action.Target, pending.Action.Value)
 			if err != nil {
-				result.Snapshot = s.snapshotLocked()
+				if changed {
+					result.Snapshot = s.snapshotAndPublishLocked()
+				} else {
+					result.Snapshot = s.snapshotLocked()
+				}
 				return result, err
 			}
 			result.StateChanges = append(result.StateChanges, change)
+			changed = true
 		default:
-			result.Snapshot = s.snapshotLocked()
+			if changed {
+				result.Snapshot = s.snapshotAndPublishLocked()
+			} else {
+				result.Snapshot = s.snapshotLocked()
+			}
 			return result, fmt.Errorf("unsupported action type: %s", pending.Action.Type)
 		}
 	}
 
 	s.pending = remaining
-	result.Snapshot = s.snapshotLocked()
+	if changed {
+		result.Snapshot = s.snapshotAndPublishLocked()
+	} else {
+		result.Snapshot = s.snapshotLocked()
+	}
 	return result, nil
 }
 
@@ -170,24 +185,26 @@ func evaluateCondition(state model.StateSnapshot, message InboundMessage, condit
 	actual := ""
 	passed := false
 
-	switch condition.Field {
-	case "carrier_exists":
-		_, passed = state.Carriers[condition.Value]
-		if passed {
-			actual = "true"
-		} else {
-			actual = "false"
+	switch normalizeLookupPath(condition.Field) {
+	case "carrierexists":
+		carrierID := strings.TrimSpace(condition.Value)
+		if carrierID == "" {
+			carrierID = firstNonEmpty(
+				lookupMessageFieldValue(message, "CarrierID"),
+				lookupMessageFieldValue(message, "carrier_id"),
+			)
 		}
-	case "source_equals":
+		_, passed = state.Carriers[carrierID]
+		actual = boolString(passed)
+	case "sourceequals":
 		actual = firstNonEmpty(
-			message.Fields["source"],
-			message.Fields["SourcePort"],
-			message.Fields["source_port"],
+			lookupMessageFieldValue(message, "source"),
+			lookupMessageFieldValue(message, "SourcePort"),
+			lookupMessageFieldValue(message, "source_port"),
 		)
 		passed = actual == condition.Value
 	default:
-		var ok bool
-		actual, ok = resolveStatePath(state, condition.Field)
+		actual, ok := resolveConditionValue(state, message, condition.Field)
 		passed = ok && actual == condition.Value
 	}
 
@@ -199,15 +216,27 @@ func evaluateCondition(state model.StateSnapshot, message InboundMessage, condit
 	}
 }
 
+func resolveConditionValue(state model.StateSnapshot, message InboundMessage, path string) (string, bool) {
+	if actual, ok := resolveStatePath(state, path); ok {
+		return actual, true
+	}
+
+	return resolveMessagePath(message, path)
+}
+
 func resolveStatePath(state model.StateSnapshot, path string) (string, bool) {
-	segments := strings.Split(path, ".")
+	segments := splitLookupPath(path)
+	if len(segments) > 0 && normalizeLookupPath(segments[0]) == "state" {
+		segments = segments[1:]
+	}
+
 	switch {
-	case len(segments) == 1 && segments[0] == "mode":
+	case len(segments) == 1 && normalizeLookupPath(segments[0]) == "mode":
 		return state.Mode, true
-	case len(segments) == 2 && segments[0] == "ports":
+	case len(segments) == 2 && normalizeLookupPath(segments[0]) == "ports":
 		value, ok := state.Ports[segments[1]]
 		return value, ok
-	case len(segments) == 3 && segments[0] == "carriers" && segments[2] == "location":
+	case len(segments) == 3 && normalizeLookupPath(segments[0]) == "carriers" && normalizeLookupPath(segments[2]) == "location":
 		carrier, ok := state.Carriers[segments[1]]
 		if !ok {
 			return "", false
@@ -219,9 +248,13 @@ func resolveStatePath(state model.StateSnapshot, path string) (string, bool) {
 }
 
 func applyMutation(state *model.StateSnapshot, target string, value string) (StateChange, error) {
-	segments := strings.Split(target, ".")
+	segments := splitLookupPath(target)
+	if len(segments) > 0 && normalizeLookupPath(segments[0]) == "state" {
+		segments = segments[1:]
+	}
+
 	switch {
-	case len(segments) == 1 && segments[0] == "mode":
+	case len(segments) == 1 && normalizeLookupPath(segments[0]) == "mode":
 		change := StateChange{
 			Path:     target,
 			OldValue: state.Mode,
@@ -229,7 +262,7 @@ func applyMutation(state *model.StateSnapshot, target string, value string) (Sta
 		}
 		state.Mode = value
 		return change, nil
-	case len(segments) == 2 && segments[0] == "ports":
+	case len(segments) == 2 && normalizeLookupPath(segments[0]) == "ports":
 		if state.Ports == nil {
 			state.Ports = map[string]string{}
 		}
@@ -240,7 +273,7 @@ func applyMutation(state *model.StateSnapshot, target string, value string) (Sta
 		}
 		state.Ports[segments[1]] = value
 		return change, nil
-	case len(segments) == 3 && segments[0] == "carriers" && segments[2] == "location":
+	case len(segments) == 3 && normalizeLookupPath(segments[0]) == "carriers" && normalizeLookupPath(segments[2]) == "location":
 		if state.Carriers == nil {
 			state.Carriers = map[string]model.CarrierState{}
 		}
@@ -256,6 +289,99 @@ func applyMutation(state *model.StateSnapshot, target string, value string) (Sta
 	default:
 		return StateChange{}, fmt.Errorf("unsupported mutate target: %s", target)
 	}
+}
+
+func resolveMessagePath(message InboundMessage, path string) (string, bool) {
+	segments := splitLookupPath(path)
+	if len(segments) == 0 {
+		return "", false
+	}
+
+	switch normalizeLookupPath(segments[0]) {
+	case "message", "msg", "data", "payload":
+		segments = segments[1:]
+	}
+	if len(segments) == 0 {
+		return "", false
+	}
+
+	if len(segments) == 1 {
+		switch normalizeLookupPath(segments[0]) {
+		case "stream":
+			return fmt.Sprintf("%d", message.Stream), true
+		case "function":
+			return fmt.Sprintf("%d", message.Function), true
+		case "wbit", "wait":
+			return boolString(message.WBit), true
+		case "rcmd", "command":
+			return message.RCMD, message.RCMD != ""
+		case "label":
+			return message.Label, message.Label != ""
+		case "body":
+			return message.Body, message.Body != ""
+		case "rawsml", "raw":
+			return message.RawSML, message.RawSML != ""
+		}
+	}
+
+	if normalizeLookupPath(segments[0]) == "fields" && len(segments) > 1 {
+		return lookupMessageField(message, strings.Join(segments[1:], "."))
+	}
+
+	if value, ok := lookupMessageField(message, strings.Join(segments, ".")); ok {
+		return value, true
+	}
+	if value, ok := lookupMessageField(message, segments[len(segments)-1]); ok {
+		return value, true
+	}
+
+	return "", false
+}
+
+func lookupMessageField(message InboundMessage, key string) (string, bool) {
+	normalizedKey := normalizeLookupPath(key)
+	if normalizedKey == "" {
+		return "", false
+	}
+
+	for field, value := range message.Fields {
+		if normalizeLookupPath(field) == normalizedKey {
+			return value, true
+		}
+	}
+
+	return "", false
+}
+
+func lookupMessageFieldValue(message InboundMessage, key string) string {
+	value, _ := lookupMessageField(message, key)
+	return value
+}
+
+func splitLookupPath(path string) []string {
+	rawSegments := strings.Split(strings.TrimSpace(path), ".")
+	segments := make([]string, 0, len(rawSegments))
+	for _, segment := range rawSegments {
+		trimmed := strings.TrimSpace(segment)
+		if trimmed == "" {
+			continue
+		}
+		segments = append(segments, trimmed)
+	}
+
+	return segments
+}
+
+func normalizeLookupPath(path string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(path), "_", ""))
+}
+
+func boolString(value bool) string {
+	if value {
+		return "true"
+	}
+
+	return "false"
 }
 
 func (s *Store) newInboundRecord(message InboundMessage, occurredAt time.Time) model.MessageRecord {
