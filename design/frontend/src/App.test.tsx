@@ -88,6 +88,19 @@ describe("App", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("bootstrap failed");
   });
 
+  it("normalizes malformed snapshot collections before rendering", async () => {
+    mockedApi.bootstrap.mockResolvedValueOnce({
+      ...makeSnapshot(),
+      rules: null as never,
+      messages: null as never,
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("0 rules")).toBeInTheDocument();
+    expect(screen.getByText("Messages: 0")).toBeInTheDocument();
+  });
+
   it("saves config from the toolbar and shows a notice", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -111,4 +124,3 @@ describe("App", () => {
     expect(screen.getByText("online-remote")).toBeInTheDocument();
   });
 });
-

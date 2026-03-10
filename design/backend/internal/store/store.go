@@ -79,7 +79,7 @@ func (s *Store) ClearLog() model.Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.snapshot.Messages = nil
+	s.snapshot.Messages = []model.MessageRecord{}
 
 	return model.CloneSnapshot(s.snapshot)
 }
@@ -117,13 +117,13 @@ func (s *Store) NewRule() model.Snapshot {
 			Function: 0,
 			RCMD:     "",
 		},
-		Conditions: nil,
+		Conditions: []model.RuleCondition{},
 		Reply: model.RuleReply{
 			Stream:   0,
 			Function: 0,
 			Ack:      0,
 		},
-		Actions: nil,
+		Actions: []model.RuleAction{},
 	}
 	s.snapshot.Rules = append(s.snapshot.Rules, newRule)
 	s.touchDirty()
@@ -140,6 +140,12 @@ func (s *Store) UpdateRule(updated model.Rule) (model.Snapshot, error) {
 			continue
 		}
 
+		if updated.Conditions == nil {
+			updated.Conditions = []model.RuleCondition{}
+		}
+		if updated.Actions == nil {
+			updated.Actions = []model.RuleAction{}
+		}
 		model.SortActions(updated.Actions)
 		if updated.Name == "" {
 			updated.Name = "unnamed rule"
@@ -167,7 +173,7 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 			Name:       fmt.Sprintf("%s (copy)", rule.Name),
 			Enabled:    rule.Enabled,
 			Match:      rule.Match,
-			Conditions: append([]model.RuleCondition(nil), rule.Conditions...),
+			Conditions: append(make([]model.RuleCondition, 0, len(rule.Conditions)), rule.Conditions...),
 			Reply:      rule.Reply,
 			Actions:    make([]model.RuleAction, 0, len(rule.Actions)),
 		}

@@ -61,5 +61,30 @@ describe("api client", () => {
 
     await expect(api.saveConfig()).rejects.toThrow("bad request");
   });
-});
 
+  it("normalizes null collections in snapshot responses", async () => {
+    const malformed = {
+      ...makeSnapshot(),
+      rules: [
+        {
+          ...makeSnapshot().rules[0],
+          conditions: null,
+          actions: null,
+        },
+      ],
+      messages: null,
+    };
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(malformed), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await api.bootstrap();
+
+    expect(result.rules[0].conditions).toEqual([]);
+    expect(result.rules[0].actions).toEqual([]);
+    expect(result.messages).toEqual([]);
+  });
+});

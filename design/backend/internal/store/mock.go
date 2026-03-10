@@ -90,7 +90,7 @@ func seedSnapshot() model.Snapshot {
 					Function: 42,
 					Ack:      3,
 				},
-				Actions: nil,
+				Actions: []model.RuleAction{},
 			},
 			{
 				ID:      "rule-3",
@@ -101,6 +101,7 @@ func seedSnapshot() model.Snapshot {
 					Function: 41,
 					RCMD:     "LOCATE",
 				},
+				Conditions: []model.RuleCondition{},
 				Reply: model.RuleReply{
 					Stream:   2,
 					Function: 42,
@@ -175,6 +176,7 @@ func seedSnapshot() model.Snapshot {
 					Body:     "L:2\n  <B 0x00>\n  L:0",
 					RawSML:   "S2F42 L:2 <B 0x00> L:0",
 				},
+				Evaluations: []model.ConditionEvaluation{},
 			},
 			{
 				ID:            "msg-5",
@@ -191,6 +193,7 @@ func seedSnapshot() model.Snapshot {
 					Body:     "L:3\n  <U4 1001>\n  <U4 5001>\n  L:1\n    L:2 <U4 100> <A \"LP01\">",
 					RawSML:   "S6F11 W L:3 <U4 1001> <U4 5001> L:1 L:2 <U4 100> <A \"LP01\">",
 				},
+				Evaluations: []model.ConditionEvaluation{},
 			},
 			{
 				ID:            "msg-6",
@@ -207,6 +210,7 @@ func seedSnapshot() model.Snapshot {
 					Body:     "L:3\n  <U4 1002>\n  <U4 5002>\n  L:1\n    L:2 <U4 100> <A \"SHELF_A01\">",
 					RawSML:   "S6F11 W L:3 <U4 1002> <U4 5002> L:1 L:2 <U4 100> <A \"SHELF_A01\">",
 				},
+				Evaluations: []model.ConditionEvaluation{},
 			},
 			{
 				ID:        "msg-7",
@@ -221,6 +225,7 @@ func seedSnapshot() model.Snapshot {
 					Body:     "<B 0x00>",
 					RawSML:   "S6F12 <B 0x00>",
 				},
+				Evaluations: []model.ConditionEvaluation{},
 			},
 		},
 	}

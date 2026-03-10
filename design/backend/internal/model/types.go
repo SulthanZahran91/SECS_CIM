@@ -150,9 +150,9 @@ func CloneSnapshot(src Snapshot) Snapshot {
 			Name:       rule.Name,
 			Enabled:    rule.Enabled,
 			Match:      rule.Match,
-			Conditions: append([]RuleCondition(nil), rule.Conditions...),
+			Conditions: cloneSlice(rule.Conditions),
 			Reply:      rule.Reply,
-			Actions:    append([]RuleAction(nil), rule.Actions...),
+			Actions:    cloneSlice(rule.Actions),
 		}
 		cloned.Rules = append(cloned.Rules, ruleCopy)
 	}
@@ -167,12 +167,16 @@ func CloneSnapshot(src Snapshot) Snapshot {
 			MatchedRule:   message.MatchedRule,
 			MatchedRuleID: message.MatchedRuleID,
 			Detail:        message.Detail,
-			Evaluations:   append([]ConditionEvaluation(nil), message.Evaluations...),
+			Evaluations:   cloneSlice(message.Evaluations),
 		}
 		cloned.Messages = append(cloned.Messages, messageCopy)
 	}
 
 	return cloned
+}
+
+func cloneSlice[T any](src []T) []T {
+	return append(make([]T, 0, len(src)), src...)
 }
 
 func SortActions(actions []RuleAction) {

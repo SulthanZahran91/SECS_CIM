@@ -52,6 +52,17 @@ func decodeSnapshot(t *testing.T, recorder *httptest.ResponseRecorder) model.Sna
 	return snapshot
 }
 
+func decodeMap(t *testing.T, recorder *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode map: %v", err)
+	}
+
+	return payload
+}
+
 func TestHealthEndpointReturnsJSONAndCORSHeaders(t *testing.T) {
 	mux := newTestMux()
 
@@ -77,6 +88,27 @@ func TestOptionsRequestReturnsNoContent(t *testing.T) {
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("expected 204 for preflight, got %d", recorder.Code)
+	}
+}
+
+func TestBootstrapSerializesEmptyCollectionsAsArrays(t *testing.T) {
+	mux := newTestMux()
+
+	recorder := doRequest(t, mux, http.MethodGet, "/api/bootstrap", nil)
+	payload := decodeMap(t, recorder)
+
+	rules := payload["rules"].([]any)
+	secondRule := rules[1].(map[string]any)
+	thirdRule := rules[2].(map[string]any)
+
+	if secondRule["actions"] == nil {
+		t.Fatalf("expected second rule actions to serialize as [] not null")
+	}
+	if thirdRule["conditions"] == nil {
+		t.Fatalf("expected third rule conditions to serialize as [] not null")
+	}
+	if payload["messages"] == nil {
+		t.Fatalf("expected messages to serialize as [] or populated array, not null")
 	}
 }
 

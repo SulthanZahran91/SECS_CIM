@@ -6,6 +6,7 @@ import { HsmsTab } from "./components/HsmsTab";
 import { MessageMonitor } from "./components/MessageMonitor";
 import { TabButton } from "./components/ui";
 import { api } from "./lib/api";
+import { normalizeSnapshot } from "./lib/normalizeSnapshot";
 import { ruleToYaml } from "./lib/ruleToYaml";
 import type { DetailTab, DeviceConfig, HsmsConfig, LeftTab, Rule, Snapshot } from "./types";
 
@@ -99,16 +100,17 @@ export default function App() {
   }
 
   function replaceSnapshot(nextSnapshot: Snapshot) {
+    const normalizedSnapshot = normalizeSnapshot(nextSnapshot);
     startTransition(() => {
-      setSnapshot(nextSnapshot);
+      setSnapshot(normalizedSnapshot);
       setExpandedRuleId((current) => {
-        if (current && nextSnapshot.rules.some((rule) => rule.id === current)) {
+        if (current && normalizedSnapshot.rules.some((rule) => rule.id === current)) {
           return current;
         }
-        return nextSnapshot.rules[0]?.id ?? null;
+        return normalizedSnapshot.rules[0]?.id ?? null;
       });
       setSelectedMessageId((current) => {
-        if (current && nextSnapshot.messages.some((message) => message.id === current)) {
+        if (current && normalizedSnapshot.messages.some((message) => message.id === current)) {
           return current;
         }
         return null;
