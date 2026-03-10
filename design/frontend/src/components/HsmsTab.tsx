@@ -192,6 +192,18 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
           />
           <span>Auto-respond to S2F25 (Loopback)</span>
         </div>
+        <div className="toggle-row">
+          <TogglePill
+            checked={hsms.handshake.autoHostStartup}
+            onToggle={() =>
+              onChangeHsms({
+                ...hsms,
+                handshake: { ...hsms.handshake, autoHostStartup: !hsms.handshake.autoHostStartup },
+              })
+            }
+          />
+          <span>Active-mode host startup (S1F13, S1F17, S2F31, S6F12)</span>
+        </div>
       </div>
     </div>
   );

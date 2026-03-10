@@ -62,9 +62,10 @@ type yamlRuleAction struct {
 }
 
 type yamlHandshakeConfig struct {
-	AutoS1F13 bool `yaml:"auto_s1f13"`
-	AutoS1F1  bool `yaml:"auto_s1f1"`
-	AutoS2F25 bool `yaml:"auto_s2f25"`
+	AutoS1F13       bool `yaml:"auto_s1f13"`
+	AutoS1F1        bool `yaml:"auto_s1f1"`
+	AutoS2F25       bool `yaml:"auto_s2f25"`
+	AutoHostStartup bool `yaml:"auto_host_startup"`
 }
 
 func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, error) {
@@ -91,9 +92,10 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 		DeviceID:  config.HSMS.DeviceID,
 		Timers:    config.HSMS.Timers,
 		Handshake: model.HandshakeConfig{
-			AutoS1F13: config.Handshake.AutoS1F13,
-			AutoS1F1:  config.Handshake.AutoS1F1,
-			AutoS2F25: config.Handshake.AutoS2F25,
+			AutoS1F13:       config.Handshake.AutoS1F13,
+			AutoS1F1:        config.Handshake.AutoS1F1,
+			AutoS2F25:       config.Handshake.AutoS2F25,
+			AutoHostStartup: config.Handshake.AutoHostStartup,
 		},
 	}
 	snapshot.Device = config.Device
@@ -220,9 +222,10 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 		},
 		Device: snapshot.Device,
 		Handshake: yamlHandshakeConfig{
-			AutoS1F13: snapshot.HSMS.Handshake.AutoS1F13,
-			AutoS1F1:  snapshot.HSMS.Handshake.AutoS1F1,
-			AutoS2F25: snapshot.HSMS.Handshake.AutoS2F25,
+			AutoS1F13:       snapshot.HSMS.Handshake.AutoS1F13,
+			AutoS1F1:        snapshot.HSMS.Handshake.AutoS1F1,
+			AutoS2F25:       snapshot.HSMS.Handshake.AutoS2F25,
+			AutoHostStartup: snapshot.HSMS.Handshake.AutoHostStartup,
 		},
 		InitialState: normalizeState(snapshot.State),
 		Rules:        rules,

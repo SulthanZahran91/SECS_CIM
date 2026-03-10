@@ -26,6 +26,7 @@ const baseSnapshot: Snapshot = {
       autoS1f13: true,
       autoS1f1: true,
       autoS2f25: false,
+      autoHostStartup: false,
     },
   },
   device: {

@@ -16,11 +16,22 @@ import (
 
 var ErrNotRunning = errors.New("simulator is not running")
 
+type hostBootstrapPhase int
+
+const (
+	hostBootstrapIdle hostBootstrapPhase = iota
+	hostBootstrapAwaitingS1F14
+	hostBootstrapAwaitingS1F18
+	hostBootstrapAwaitingS2F32
+	hostBootstrapReady
+)
+
 type Controller struct {
-	store     *store.Store
-	mu        sync.Mutex
-	cancel    context.CancelFunc
-	transport *hsms.Manager
+	store         *store.Store
+	mu            sync.Mutex
+	cancel        context.CancelFunc
+	transport     *hsms.Manager
+	hostBootstrap hostBootstrapPhase
 }
 
 type Status struct {
@@ -56,6 +67,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 	})
 	c.cancel = cancel
 	c.transport = transport
+	c.hostBootstrap = hostBootstrapIdle
 	c.mu.Unlock()
 
 	c.store.RecordAppliedHSMS(appliedConfig)
@@ -79,6 +91,7 @@ func (c *Controller) Stop() model.Snapshot {
 	cancel := c.cancel
 	c.cancel = nil
 	c.transport = nil
+	c.hostBootstrap = hostBootstrapIdle
 	c.mu.Unlock()
 
 	if cancel != nil {
@@ -156,9 +169,15 @@ func (c *Controller) schedulerLoop(ctx context.Context) {
 func (c *Controller) updateRuntimeState(state string) {
 	c.mu.Lock()
 	running := c.cancel != nil
+	if state != "SELECTED" {
+		c.hostBootstrap = hostBootstrapIdle
+	}
 	c.mu.Unlock()
 
 	c.store.SetRuntime(running, state)
+	if running && state == "SELECTED" {
+		c.beginHostBootstrap()
+	}
 }
 
 func (c *Controller) currentTransport() *hsms.Manager {
@@ -178,16 +197,30 @@ func (c *Controller) handleDataMessage(message hsms.Message) ([]hsms.Message, er
 		return []hsms.Message{response}, nil
 	}
 
+	responses := make([]hsms.Message, 0, 2)
 	result := c.store.ProcessInbound(inbound, now)
+	if response, ok := hostAutoResponseForMessage(config, message); ok {
+		responses = append(responses, response)
+	}
+	for _, response := range responses {
+		c.appendProtocolMessage(now, "OUT", response, "", "")
+	}
 	response, ok, err := c.replyForResult(config, message, result)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
+	if ok {
+		responses = append(responses, response)
+	}
+	if err := c.advanceHostBootstrap(config, message); err != nil {
+		log.Printf("advance host bootstrap after %s: %v", message.Label(), err)
+		c.store.SetRuntimeError(normalizeRuntimeError(err))
+	}
+	if len(responses) == 0 {
 		return nil, nil
 	}
 
-	return []hsms.Message{response}, nil
+	return responses, nil
 }
 
 func (c *Controller) replyForResult(config model.Snapshot, inbound hsms.Message, result store.RuntimeResult) (hsms.Message, bool, error) {
@@ -281,6 +314,105 @@ func autoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.M
 	default:
 		return hsms.Message{}, false
 	}
+}
+
+func hostAutoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.Message, bool) {
+	if !hostBootstrapEnabled(config.HSMS) {
+		return hsms.Message{}, false
+	}
+
+	switch {
+	case message.Stream == 6 && message.Function == 11 && message.WBit:
+		return hsms.BuildS6F12(uint16(config.HSMS.SessionID), message.SystemBytes, 0), true
+	default:
+		return hsms.Message{}, false
+	}
+}
+
+func (c *Controller) beginHostBootstrap() {
+	config := c.store.ConfigSnapshot()
+	if !hostBootstrapEnabled(config.HSMS) {
+		return
+	}
+
+	c.mu.Lock()
+	if c.cancel == nil || c.transport == nil || c.hostBootstrap != hostBootstrapIdle {
+		c.mu.Unlock()
+		return
+	}
+	c.hostBootstrap = hostBootstrapAwaitingS1F14
+	c.mu.Unlock()
+
+	if err := c.sendStandaloneMessage(hsms.BuildS1F13(uint16(config.HSMS.SessionID), 0)); err != nil {
+		c.setHostBootstrap(hostBootstrapIdle)
+		log.Printf("start host bootstrap S1F13: %v", err)
+		c.store.SetRuntimeError(normalizeRuntimeError(err))
+	}
+}
+
+func (c *Controller) advanceHostBootstrap(config model.Snapshot, message hsms.Message) error {
+	if !hostBootstrapEnabled(config.HSMS) {
+		return nil
+	}
+
+	switch {
+	case message.Stream == 1 && message.Function == 14:
+		if !c.transitionHostBootstrap(hostBootstrapAwaitingS1F14, hostBootstrapAwaitingS1F18) {
+			return nil
+		}
+		if err := c.sendStandaloneMessage(hsms.BuildS1F17(uint16(config.HSMS.SessionID), 0)); err != nil {
+			c.setHostBootstrap(hostBootstrapIdle)
+			return err
+		}
+	case message.Stream == 1 && message.Function == 18:
+		if !c.transitionHostBootstrap(hostBootstrapAwaitingS1F18, hostBootstrapAwaitingS2F32) {
+			return nil
+		}
+		if err := c.sendStandaloneMessage(hsms.BuildS2F31(uint16(config.HSMS.SessionID), 0, time.Now())); err != nil {
+			c.setHostBootstrap(hostBootstrapIdle)
+			return err
+		}
+	case message.Stream == 2 && message.Function == 32:
+		if c.transitionHostBootstrap(hostBootstrapAwaitingS2F32, hostBootstrapReady) {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
+	transport := c.currentTransport()
+	if transport == nil {
+		return ErrNotRunning
+	}
+	if err := transport.Send(message); err != nil {
+		return err
+	}
+
+	c.appendProtocolMessage(time.Now().UTC(), "OUT", message, "", "")
+	return nil
+}
+
+func (c *Controller) transitionHostBootstrap(expect hostBootstrapPhase, next hostBootstrapPhase) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.hostBootstrap != expect {
+		return false
+	}
+	c.hostBootstrap = next
+	return true
+}
+
+func (c *Controller) setHostBootstrap(phase hostBootstrapPhase) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hostBootstrap = phase
+}
+
+func hostBootstrapEnabled(config model.HsmsConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(config.Mode), "active") && config.Handshake.AutoHostStartup
 }
 
 func normalizeRuntimeError(err error) string {

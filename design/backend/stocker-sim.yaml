@@ -21,6 +21,7 @@ handshake:
   auto_s1f13: true
   auto_s1f1: true
   auto_s2f25: false
+  auto_host_startup: false
 
 initial_state:
   mode: online-remote

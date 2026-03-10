@@ -186,6 +186,7 @@ handshake:
   auto_s1f13: false
   auto_s1f1: true
   auto_s2f25: true
+  auto_host_startup: false
 initial_state:
   mode: online-local
   ports:
@@ -367,6 +368,7 @@ handshake:
   auto_s1f13: false
   auto_s1f1: false
   auto_s2f25: true
+  auto_host_startup: true
 initial_state:
   mode: online-local
   ports:
@@ -402,7 +404,7 @@ rules:
 	if snapshot.HSMS.Mode != "active" || snapshot.HSMS.IP != "10.0.0.9" {
 		t.Fatalf("expected HSMS config from file, got %#v", snapshot.HSMS)
 	}
-	if !snapshot.HSMS.Handshake.AutoS2F25 || snapshot.HSMS.Handshake.AutoS1F13 {
+	if !snapshot.HSMS.Handshake.AutoS2F25 || snapshot.HSMS.Handshake.AutoS1F13 || !snapshot.HSMS.Handshake.AutoHostStartup {
 		t.Fatalf("expected handshake config from file, got %#v", snapshot.HSMS.Handshake)
 	}
 	if len(snapshot.Rules) != 1 || snapshot.Rules[0].ID != "rule-1" {

@@ -38,6 +38,7 @@ export interface HandshakeConfig {
   autoS1f13: boolean;
   autoS1f1: boolean;
   autoS2f25: boolean;
+  autoHostStartup: boolean;
 }
 
 export interface DeviceConfig {

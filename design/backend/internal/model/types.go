@@ -39,9 +39,10 @@ type HsmsTimers struct {
 }
 
 type HandshakeConfig struct {
-	AutoS1F13 bool `json:"autoS1f13"`
-	AutoS1F1  bool `json:"autoS1f1"`
-	AutoS2F25 bool `json:"autoS2f25"`
+	AutoS1F13       bool `json:"autoS1f13"`
+	AutoS1F1        bool `json:"autoS1f1"`
+	AutoS2F25       bool `json:"autoS2f25"`
+	AutoHostStartup bool `json:"autoHostStartup"`
 }
 
 type DeviceConfig struct {

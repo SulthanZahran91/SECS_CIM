@@ -26,9 +26,10 @@ func seedSnapshot() model.Snapshot {
 				T8: 5,
 			},
 			Handshake: model.HandshakeConfig{
-				AutoS1F13: true,
-				AutoS1F1:  true,
-				AutoS2F25: false,
+				AutoS1F13:       true,
+				AutoS1F1:        true,
+				AutoS2F25:       false,
+				AutoHostStartup: false,
 			},
 		},
 		Device: model.DeviceConfig{

@@ -85,6 +85,26 @@ func TestItemEncodeDecodeAndRemoteCommandExtraction(t *testing.T) {
 	}
 }
 
+func TestU2ItemRoundTrip(t *testing.T) {
+	body := List(U2(3), List(U2(79), U4(1001)))
+
+	encoded, err := EncodeItem(body)
+	if err != nil {
+		t.Fatalf("encode U2 item: %v", err)
+	}
+
+	decoded, consumed, err := DecodeItem(encoded)
+	if err != nil {
+		t.Fatalf("decode U2 item: %v", err)
+	}
+	if consumed != len(encoded) {
+		t.Fatalf("expected to consume %d bytes, consumed %d", len(encoded), consumed)
+	}
+	if got := decoded.Compact(); got != body.Compact() {
+		t.Fatalf("expected compact SML %q, got %q", body.Compact(), got)
+	}
+}
+
 func TestReadFrameWithInterByteTimeoutAllowsIdleBeforeFirstByte(t *testing.T) {
 	server, client := net.Pipe()
 	defer server.Close()

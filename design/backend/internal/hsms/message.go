@@ -1,6 +1,9 @@
 package hsms
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 type Message struct {
 	SessionID   uint16
@@ -84,10 +87,18 @@ func (message Message) Label() string {
 		return "Establish Comm"
 	case message.Stream == 1 && message.Function == 14:
 		return "Establish Comm Ack"
+	case message.Stream == 1 && message.Function == 17:
+		return "Request On-Line"
+	case message.Stream == 1 && message.Function == 18:
+		return "Request On-Line Ack"
 	case message.Stream == 2 && message.Function == 25:
 		return "Loopback Diagnostic"
 	case message.Stream == 2 && message.Function == 26:
 		return "Loopback Diagnostic Ack"
+	case message.Stream == 2 && message.Function == 31:
+		return "Date and Time Set Request"
+	case message.Stream == 2 && message.Function == 32:
+		return "Date and Time Set Ack"
 	case message.Stream == 2 && message.Function == 41:
 		if rcmd, _, ok := ExtractRemoteCommand(message); ok {
 			return "Remote Command: " + rcmd
@@ -160,6 +171,18 @@ func BuildS1F2(sessionID uint16, systemBytes uint32, mdln string, softrev string
 	}
 }
 
+func BuildS1F13(sessionID uint16, systemBytes uint32) Message {
+	body := List()
+	return Message{
+		SessionID:   sessionID,
+		Stream:      1,
+		Function:    13,
+		WBit:        true,
+		SystemBytes: systemBytes,
+		Body:        &body,
+	}
+}
+
 func BuildS1F14(sessionID uint16, systemBytes uint32, mdln string, softrev string) Message {
 	body := List(
 		Binary(0x00),
@@ -178,6 +201,16 @@ func BuildS1F14(sessionID uint16, systemBytes uint32, mdln string, softrev strin
 	}
 }
 
+func BuildS1F17(sessionID uint16, systemBytes uint32) Message {
+	return Message{
+		SessionID:   sessionID,
+		Stream:      1,
+		Function:    17,
+		WBit:        true,
+		SystemBytes: systemBytes,
+	}
+}
+
 func BuildS2F26(sessionID uint16, systemBytes uint32, body *Item) Message {
 	return Message{
 		SessionID:   sessionID,
@@ -186,6 +219,18 @@ func BuildS2F26(sessionID uint16, systemBytes uint32, body *Item) Message {
 		WBit:        false,
 		SystemBytes: systemBytes,
 		Body:        body,
+	}
+}
+
+func BuildS2F31(sessionID uint16, systemBytes uint32, timestamp time.Time) Message {
+	body := ASCII(formatDateTime16(timestamp))
+	return Message{
+		SessionID:   sessionID,
+		Stream:      2,
+		Function:    31,
+		WBit:        true,
+		SystemBytes: systemBytes,
+		Body:        &body,
 	}
 }
 
@@ -211,4 +256,25 @@ func BuildS6F11(sessionID uint16, systemBytes uint32, ceid string) Message {
 		SystemBytes: systemBytes,
 		Body:        &body,
 	}
+}
+
+func BuildS6F12(sessionID uint16, systemBytes uint32, ack byte) Message {
+	body := Binary(ack)
+	return Message{
+		SessionID:   sessionID,
+		Stream:      6,
+		Function:    12,
+		WBit:        false,
+		SystemBytes: systemBytes,
+		Body:        &body,
+	}
+}
+
+func formatDateTime16(timestamp time.Time) string {
+	now := timestamp
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	return now.Format("20060102150405") + fmt.Sprintf("%02d", now.Nanosecond()/10_000_000)
 }

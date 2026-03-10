@@ -15,6 +15,7 @@ Current reality:
 - The live UI now surfaces transport/runtime failures and supports paused vs. auto-tail monitor behavior during sustained sessions.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
+- Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 
 The design references remain:
@@ -137,6 +138,7 @@ Done:
 - The runtime now applies configured address, port, session ID, and basic T5/T6/T7/T8 timer behavior
 - `T8` enforcement now applies to inter-byte stalls within a frame instead of idle time between frames, which keeps selected sessions up against quieter hosts
 - The backend now emits trace logs for TCP session lifecycle and HSMS control frames so external host handshake issues can be diagnosed from runtime logs
+- Active mode now has an optional host-startup path that sends `S1F13`, advances through `S1F17` and `S2F31`, and acknowledges inbound `S6F11` with `S6F12`
 
 Remaining:
 
@@ -168,6 +170,11 @@ Done:
   - `S1F13` / `S1F14`
   - `S1F1` / `S1F2`
   - `S2F25` / `S2F26`
+- Active-mode host bootstrap now exists for a minimal equipment bring-up sequence:
+  - `S1F13` / `S1F14`
+  - `S1F17` / `S1F18`
+  - `S2F31` / `S2F32`
+  - `S6F11` / `S6F12`
 - Rule-driven `S2F42` replies and scheduled `S6F11` events are now encoded and sent over the selected HSMS session
 - Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
 

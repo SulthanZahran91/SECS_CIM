@@ -33,6 +33,13 @@ function normalizeMessage(message: MessageRecord): MessageRecord {
 export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
+    hsms: {
+      ...snapshot.hsms,
+      handshake: {
+        ...snapshot.hsms.handshake,
+        autoHostStartup: Boolean(snapshot.hsms?.handshake?.autoHostStartup),
+      },
+    },
     runtime: {
       ...snapshot.runtime,
       restartRequired: Boolean(snapshot.runtime?.restartRequired),

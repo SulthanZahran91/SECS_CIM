@@ -282,6 +282,142 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 	assertLogContains(t, traceOutput, "HSMS control IN Select.rsp")
 }
 
+func TestControllerActiveHostStartupBootstrapsAfterSelect(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hostListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for active host bootstrap test: %v", err)
+	}
+	defer hostListener.Close()
+
+	hostPort := hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "active"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = hostPort
+	hsmsConfig.Timers.T5 = 1
+	hsmsConfig.Timers.T6 = 1
+	hsmsConfig.Handshake.AutoHostStartup = true
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "CONNECTING" {
+		t.Fatalf("expected active controller to start CONNECTING, got %#v", started.Runtime)
+	}
+
+	conn := acceptEventually(t, hostListener)
+	defer conn.Close()
+
+	selectReq := readFrame(t, conn)
+	if selectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected active select.req, got %#v", selectReq)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write select.rsp: %v", err)
+	}
+
+	establishReq := readMessage(t, conn)
+	if establishReq.Stream != 1 || establishReq.Function != 13 || !establishReq.WBit {
+		t.Fatalf("expected S1F13 bootstrap request, got %#v", establishReq)
+	}
+
+	writeMessage(t, conn, hsms.BuildS1F14(uint16(hsmsConfig.SessionID), establishReq.SystemBytes, "EQP-01", "1.2.3"))
+
+	onlineReq := readMessage(t, conn)
+	if onlineReq.Stream != 1 || onlineReq.Function != 17 || !onlineReq.WBit {
+		t.Fatalf("expected S1F17 bootstrap request, got %#v", onlineReq)
+	}
+
+	s1f18Body := itemPtr(hsms.Binary(0x00))
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    18,
+		WBit:        false,
+		SystemBytes: onlineReq.SystemBytes,
+		Body:        s1f18Body,
+	})
+
+	timeSetReq := readMessage(t, conn)
+	if timeSetReq.Stream != 2 || timeSetReq.Function != 31 || !timeSetReq.WBit || timeSetReq.Body == nil || timeSetReq.Body.Type != hsms.ItemASCII {
+		t.Fatalf("expected S2F31 bootstrap request, got %#v", timeSetReq)
+	}
+	if len(timeSetReq.Body.Text) != 16 {
+		t.Fatalf("expected 16-char S2F31 timestamp, got %q", timeSetReq.Body.Text)
+	}
+	for _, ch := range timeSetReq.Body.Text {
+		if ch < '0' || ch > '9' {
+			t.Fatalf("expected numeric S2F31 timestamp, got %q", timeSetReq.Body.Text)
+		}
+	}
+
+	s2f32Body := itemPtr(hsms.Binary(0x00))
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    32,
+		WBit:        false,
+		SystemBytes: timeSetReq.SystemBytes,
+		Body:        s2f32Body,
+	})
+
+	eventBody := itemPtr(hsms.List(
+		hsms.U4(0),
+		hsms.U2(3),
+		hsms.List(
+			hsms.List(
+				hsms.U2(1),
+				hsms.List(),
+			),
+		),
+	))
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000BEEF,
+		Body:        eventBody,
+	})
+
+	eventAck := readMessage(t, conn)
+	if eventAck.Stream != 6 || eventAck.Function != 12 || eventAck.SystemBytes != 0x0000BEEF {
+		t.Fatalf("expected S6F12 event ack, got %#v", eventAck)
+	}
+
+	waitFor(t, time.Second, func() bool {
+		messages := state.Snapshot().Messages
+		if len(messages) < 8 {
+			return false
+		}
+		got := []string{
+			messages[0].SF,
+			messages[1].SF,
+			messages[2].SF,
+			messages[3].SF,
+			messages[4].SF,
+			messages[5].SF,
+			messages[6].SF,
+			messages[7].SF,
+		}
+		expected := []string{"S1F13", "S1F14", "S1F17", "S1F18", "S2F31", "S2F32", "S6F11", "S6F12"}
+		for index := range expected {
+			if got[index] != expected[index] {
+				return false
+			}
+		}
+		return true
+	})
+}
+
 func TestControllerRestartClearsPendingConnectionChanges(t *testing.T) {
 	state := store.New()
 
