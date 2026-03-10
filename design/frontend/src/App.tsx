@@ -185,7 +185,11 @@ export default function App() {
   }
 
   if (!snapshot) {
-    return <div className="loading-screen">No simulator state available.</div>;
+    return (
+      <div className="loading-screen" role={error ? "alert" : undefined}>
+        {error ?? "No simulator state available."}
+      </div>
+    );
   }
 
   return (
@@ -282,4 +286,3 @@ export default function App() {
     </div>
   );
 }
-

@@ -36,10 +36,13 @@ cd design/backend
 go test ./...
 cd ../frontend
 npm install
+npm test
 npm run build
 ```
 
 If `frontend/dist` exists, the Go server will serve the built app at `/`.
+
+Frontend unit tests run with Vitest and Testing Library via `npm test`.
 
 ## Air-Gapped Package
 

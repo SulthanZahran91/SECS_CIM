@@ -15,6 +15,7 @@
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
