@@ -26,6 +26,7 @@ describe("MessageMonitor", () => {
     const onChangeDetailTab = vi.fn();
     const onJumpToRule = vi.fn();
     const onClearLog = vi.fn();
+    const onHide = vi.fn();
 
     const { container, rerender } = render(
       <MessageMonitor
@@ -36,6 +37,7 @@ describe("MessageMonitor", () => {
         onChangeDetailTab={onChangeDetailTab}
         onJumpToRule={onJumpToRule}
         onClearLog={onClearLog}
+        onHide={onHide}
       />,
     );
 
@@ -88,6 +90,7 @@ describe("MessageMonitor", () => {
         onChangeDetailTab={onChangeDetailTab}
         onJumpToRule={onJumpToRule}
         onClearLog={onClearLog}
+        onHide={onHide}
       />,
     );
 

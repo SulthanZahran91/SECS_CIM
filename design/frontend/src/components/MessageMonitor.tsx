@@ -10,6 +10,7 @@ interface MessageMonitorProps {
   onChangeDetailTab: (tab: DetailTab) => void;
   onJumpToRule: (ruleId: string | undefined) => void;
   onClearLog: () => void;
+  onHide: () => void;
 }
 
 export function MessageMonitor({
@@ -20,6 +21,7 @@ export function MessageMonitor({
   onChangeDetailTab,
   onJumpToRule,
   onClearLog,
+  onHide,
 }: MessageMonitorProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousCountRef = useRef(messages.length);
@@ -75,6 +77,7 @@ export function MessageMonitor({
           right={
             <div className="monitor-actions">
               <Badge tone={isPinnedToBottom ? "green" : "yellow"}>{isPinnedToBottom ? "Live tail" : "Paused"}</Badge>
+              <button className="text-button" onClick={onHide} type="button">Hide log</button>
               <button className="text-button" onClick={onClearLog} type="button">Clear log</button>
             </div>
           }

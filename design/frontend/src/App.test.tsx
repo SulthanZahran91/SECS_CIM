@@ -242,4 +242,22 @@ describe("App", () => {
 
     expect(await screen.findByText("restart required")).toBeInTheDocument();
   });
+
+  it("lets the user hide and re-show the message log panel", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByText("2 rules");
+    expect(screen.getByText("Message Log")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Hide log" }));
+
+    expect(screen.queryByText("Message Log")).not.toBeInTheDocument();
+    expect(screen.getByText("Message log hidden")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show log" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show log" }));
+
+    expect(await screen.findByText("Message Log")).toBeInTheDocument();
+  });
 });

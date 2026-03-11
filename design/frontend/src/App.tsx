@@ -43,6 +43,7 @@ export default function App() {
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("decoded");
+  const [logsHidden, setLogsHidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -299,21 +300,34 @@ export default function App() {
         </section>
 
         <section className="right-panel">
-          <MessageMonitor
-            messages={snapshot.messages}
-            selectedMessageId={selectedMessageId}
-            detailTab={detailTab}
-            onSelectMessage={setSelectedMessageId}
-            onChangeDetailTab={setDetailTab}
-            onJumpToRule={(ruleId) => {
-              if (!ruleId) {
-                return;
-              }
-              setLeftTab("rules");
-              setExpandedRuleId(ruleId);
-            }}
-            onClearLog={() => void run(api.clearLog, "Message log cleared")}
-          />
+          {logsHidden ? (
+            <div className="monitor-collapsed">
+              <span className="subtle-text">Message log hidden</span>
+              <button className="toolbar-button neutral" onClick={() => setLogsHidden(false)} type="button">
+                Show log
+              </button>
+            </div>
+          ) : (
+            <MessageMonitor
+              messages={snapshot.messages}
+              selectedMessageId={selectedMessageId}
+              detailTab={detailTab}
+              onSelectMessage={setSelectedMessageId}
+              onChangeDetailTab={setDetailTab}
+              onJumpToRule={(ruleId) => {
+                if (!ruleId) {
+                  return;
+                }
+                setLeftTab("rules");
+                setExpandedRuleId(ruleId);
+              }}
+              onClearLog={() => void run(api.clearLog, "Message log cleared")}
+              onHide={() => {
+                setLogsHidden(true);
+                setSelectedMessageId(null);
+              }}
+            />
+          )}
 
           <footer className="status-bar">
             <span>

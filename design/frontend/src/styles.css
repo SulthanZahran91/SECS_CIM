@@ -710,6 +710,16 @@ textarea {
   min-height: 0;
 }
 
+.monitor-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(42, 42, 61, 0.35);
+}
+
 .monitor-list {
   display: flex;
   flex: 1;
