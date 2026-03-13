@@ -256,7 +256,7 @@ export default function App() {
       {!requestError && !streamError && !runtimeWarning && notice ? <div className="banner notice">{notice}</div> : null}
 
       <div className="main-split">
-        <section className="left-panel">
+        <section className={`left-panel ${logsHidden ? "full-width" : ""}`}>
           <div className="tab-row">
             <TabButton active={leftTab === "rules"} icon="⚙" onClick={() => setLeftTab("rules")}>
               Rules
@@ -267,6 +267,11 @@ export default function App() {
             <TabButton active={leftTab === "hsms"} icon="⇌" onClick={() => setLeftTab("hsms")}>
               HSMS
             </TabButton>
+            {logsHidden ? (
+              <button className="text-button" onClick={() => setLogsHidden(false)} type="button" style={{ marginLeft: "auto", padding: "0 8px", fontSize: 12 }}>
+                Show log
+              </button>
+            ) : null}
           </div>
 
           {leftTab === "rules" ? (
@@ -300,17 +305,10 @@ export default function App() {
           ) : null}
         </section>
 
-        <section className="right-panel">
+        <section className={`right-panel ${logsHidden ? "collapsed" : ""}`}>
           <OverviewPanel snapshot={snapshot} />
 
-          {logsHidden ? (
-            <div className="monitor-collapsed">
-              <span className="subtle-text">Message log hidden</span>
-              <button className="toolbar-button neutral" onClick={() => setLogsHidden(false)} type="button">
-                Show log
-              </button>
-            </div>
-          ) : (
+          {logsHidden ? null : (
             <MessageMonitor
               messages={snapshot.messages}
               selectedMessageId={selectedMessageId}

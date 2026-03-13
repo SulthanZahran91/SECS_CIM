@@ -278,7 +278,7 @@ textarea {
 }
 
 .left-panel {
-  width: 380px;
+  flex: 1;
   min-width: 320px;
   display: flex;
   flex-direction: column;
@@ -287,12 +287,21 @@ textarea {
   backdrop-filter: blur(12px);
 }
 
+.left-panel.full-width {
+  flex: 1;
+  border-right: 0;
+}
+
 .right-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   background: linear-gradient(180deg, rgba(13, 26, 33, 0.68), rgba(8, 17, 22, 0.94));
+}
+
+.right-panel.collapsed {
+  display: none;
 }
 
 .tab-row {
@@ -1439,6 +1448,7 @@ textarea {
   }
 
   .left-panel {
+    flex: none;
     width: 100%;
     height: 48%;
     border-right: 0;

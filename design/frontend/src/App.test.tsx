@@ -253,7 +253,6 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Hide log" }));
 
     expect(screen.queryByText("Message Log")).not.toBeInTheDocument();
-    expect(screen.getByText("Message log hidden")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show log" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Show log" }));
