@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useRef, useState } from "react";
 import { Badge, SectionHeader, TabButton } from "./ui";
 import type { DetailTab, MessageRecord } from "../types";
 
@@ -13,6 +13,9 @@ interface MessageMonitorProps {
   onHide: () => void;
 }
 
+type DirectionFilter = "all" | "IN" | "OUT";
+type ScopeFilter = "all" | "matched" | "system";
+
 export function MessageMonitor({
   messages,
   selectedMessageId,
@@ -23,14 +26,58 @@ export function MessageMonitor({
   onClearLog,
   onHide,
 }: MessageMonitorProps) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const previousCountRef = useRef(messages.length);
+  const [searchValue, setSearchValue] = useState("");
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>("all");
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>("all");
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true);
   const [pendingMessageCount, setPendingMessageCount] = useState(0);
-  const selectedMessage = selectedMessageId ? messages.find((message) => message.id === selectedMessageId) ?? null : null;
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const deferredSearch = useDeferredValue(searchValue);
+  const searchQuery = deferredSearch.trim().toLowerCase();
+
+  const filteredMessages = messages.filter((message) => {
+    if (directionFilter !== "all" && message.direction !== directionFilter) {
+      return false;
+    }
+
+    const isRuleLinked = Boolean(message.matchedRule);
+    if (scopeFilter === "matched" && !isRuleLinked) {
+      return false;
+    }
+    if (scopeFilter === "system" && isRuleLinked) {
+      return false;
+    }
+
+    if (!searchQuery) {
+      return true;
+    }
+
+    const haystack = [
+      message.timestamp,
+      message.direction,
+      message.sf,
+      message.label,
+      message.matchedRule ?? "",
+      message.detail.body,
+      message.detail.rawSml,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return haystack.includes(searchQuery);
+  });
+
+  const previousCountRef = useRef(filteredMessages.length);
+  const selectedMessage = selectedMessageId ? filteredMessages.find((message) => message.id === selectedMessageId) ?? null : null;
 
   useEffect(() => {
-    const nextCount = messages.length;
+    if (selectedMessageId && !filteredMessages.some((message) => message.id === selectedMessageId)) {
+      onSelectMessage(null);
+    }
+  }, [filteredMessages, onSelectMessage, selectedMessageId]);
+
+  useEffect(() => {
+    const nextCount = filteredMessages.length;
     const previousCount = previousCountRef.current;
     previousCountRef.current = nextCount;
 
@@ -54,7 +101,7 @@ export function MessageMonitor({
     }
 
     setPendingMessageCount((current) => current + (nextCount - previousCount));
-  }, [isPinnedToBottom, messages]);
+  }, [filteredMessages.length, isPinnedToBottom]);
 
   function handleScroll() {
     const atBottom = isNearBottom(scrollRef.current);
@@ -70,6 +117,8 @@ export function MessageMonitor({
     setPendingMessageCount(0);
   }
 
+  const hasActiveFilters = searchQuery.length > 0 || directionFilter !== "all" || scopeFilter !== "all";
+
   return (
     <div className="monitor-shell">
       <div className="monitor-list">
@@ -77,13 +126,49 @@ export function MessageMonitor({
           right={
             <div className="monitor-actions">
               <Badge tone={isPinnedToBottom ? "green" : "yellow"}>{isPinnedToBottom ? "Live tail" : "Paused"}</Badge>
-              <button className="text-button" onClick={onHide} type="button">Hide log</button>
-              <button className="text-button" onClick={onClearLog} type="button">Clear log</button>
+              <Badge tone={hasActiveFilters ? "accent" : "neutral"}>
+                {filteredMessages.length}/{messages.length} shown
+              </Badge>
+              <button className="text-button" onClick={onHide} type="button">
+                Hide log
+              </button>
+              <button className="text-button" onClick={onClearLog} type="button">
+                Clear log
+              </button>
             </div>
           }
         >
           Message Log
         </SectionHeader>
+
+        <div className="monitor-toolbar">
+          <label className="monitor-search-group">
+            <span className="field-label">Search messages</span>
+            <input
+              aria-label="Search messages"
+              className="field-input monitor-search"
+              onChange={(event) => setSearchValue(event.target.value)}
+              placeholder="Search SxFy, labels, rules, or payload text"
+              spellCheck={false}
+              type="text"
+              value={searchValue}
+            />
+          </label>
+
+          <div className="monitor-filter-groups">
+            <div className="filter-group" role="group" aria-label="Direction filter">
+              <FilterChip active={directionFilter === "all"} label="All traffic" onClick={() => setDirectionFilter("all")} />
+              <FilterChip active={directionFilter === "IN"} label="Incoming" onClick={() => setDirectionFilter("IN")} />
+              <FilterChip active={directionFilter === "OUT"} label="Outgoing" onClick={() => setDirectionFilter("OUT")} />
+            </div>
+            <div className="filter-group" role="group" aria-label="Scope filter">
+              <FilterChip active={scopeFilter === "all"} label="All sources" onClick={() => setScopeFilter("all")} />
+              <FilterChip active={scopeFilter === "matched"} label="Rule linked" onClick={() => setScopeFilter("matched")} />
+              <FilterChip active={scopeFilter === "system"} label="System only" onClick={() => setScopeFilter("system")} />
+            </div>
+          </div>
+        </div>
+
         <div className="message-header">
           <span className="time-col">Time</span>
           <span className="dir-col">Dir</span>
@@ -93,8 +178,13 @@ export function MessageMonitor({
         </div>
         <div className="message-scroll-wrap">
           <div className="message-scroll" onScroll={handleScroll} ref={scrollRef}>
-            {messages.length === 0 ? <div className="empty-copy padded">Message log is empty.</div> : null}
-            {messages.map((message) => {
+            {messages.length === 0 ? (
+              <div className="empty-copy padded">Message log is empty. Start the runtime or connect a host to populate traffic.</div>
+            ) : null}
+            {messages.length > 0 && filteredMessages.length === 0 ? (
+              <div className="empty-copy padded">No messages match the current filters.</div>
+            ) : null}
+            {filteredMessages.map((message) => {
               const selected = message.id === selectedMessageId;
               return (
                 <button
@@ -109,7 +199,7 @@ export function MessageMonitor({
                   </span>
                   <span className="sf-col sf-text">{message.sf}</span>
                   <span className="info-col">{message.label}</span>
-                  <span className="rule-col matched-rule-text">{message.matchedRule ?? "—"}</span>
+                  <span className="rule-col matched-rule-text">{message.matchedRule ?? "System / auto"}</span>
                 </button>
               );
             })}
@@ -117,7 +207,7 @@ export function MessageMonitor({
           {!isPinnedToBottom && pendingMessageCount > 0 ? (
             <div className="tail-indicator">
               <button className="tail-button" onClick={jumpToLatest} type="button">
-                ↓ {pendingMessageCount} new {pendingMessageCount === 1 ? "message" : "messages"}
+                Down {pendingMessageCount} new {pendingMessageCount === 1 ? "message" : "messages"}
               </button>
             </div>
           ) : null}
@@ -144,11 +234,11 @@ export function MessageMonitor({
                   <div className="detail-summary">
                     <div className="field-group">
                       <span className="detail-label">Stream</span>
-                      <span className="sf-text" style={{ fontSize: 16 }}>{selectedMessage.detail.stream}</span>
+                      <span className="sf-text detail-value">{selectedMessage.detail.stream}</span>
                     </div>
                     <div className="field-group">
                       <span className="detail-label">Function</span>
-                      <span className="sf-text" style={{ fontSize: 16 }}>{selectedMessage.detail.function}</span>
+                      <span className="sf-text detail-value">{selectedMessage.detail.function}</span>
                     </div>
                     <div className="field-group">
                       <span className="detail-label">W-bit</span>
@@ -163,7 +253,7 @@ export function MessageMonitor({
                       </Badge>
                     </div>
                   </div>
-                  <div className="detail-label" style={{ marginTop: 8 }}>Body (SML Tree)</div>
+                  <div className="detail-label">Body (SML Tree)</div>
                   <pre className="detail-code">{selectedMessage.detail.body}</pre>
                 </div>
               ) : null}
@@ -188,13 +278,19 @@ export function MessageMonitor({
                       >
                         {selectedMessage.matchedRule}
                       </button>
-                      
+
                       {selectedMessage.evaluations?.length ? (
                         <>
-                          <div className="detail-label" style={{ marginTop: 12 }}>Condition Evaluations</div>
+                          <div className="detail-label" style={{ marginTop: 12 }}>
+                            Condition Evaluations
+                          </div>
                           <div className="stack-list">
                             {selectedMessage.evaluations.map((evaluation, index) => (
-                              <div className="condition-row" key={`${selectedMessage.id}-evaluation-${index}`} style={{ background: "rgba(0,0,0,0.2)" }}>
+                              <div
+                                className="condition-row"
+                                key={`${selectedMessage.id}-evaluation-${index}`}
+                                style={{ background: "rgba(8, 17, 22, 0.45)" }}
+                              >
                                 <div className="field-group" style={{ flex: 1 }}>
                                   <span className="field-label">Field</span>
                                   <span className="mono">{evaluation.field}</span>
@@ -219,7 +315,9 @@ export function MessageMonitor({
                       )}
                     </>
                   ) : (
-                    <div className="empty-copy">No rule match recorded for this message. It may be a system-level handshake (S1F13, S1F1, etc.).</div>
+                    <div className="empty-copy">
+                      No rule match recorded for this message. It may be a system-level handshake (S1F13, S1F1, and similar control flows).
+                    </div>
                   )}
                 </div>
               ) : null}
@@ -228,6 +326,20 @@ export function MessageMonitor({
         ) : null}
       </div>
     </div>
+  );
+}
+
+interface FilterChipProps {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}
+
+function FilterChip({ active, label, onClick }: FilterChipProps) {
+  return (
+    <button className={`filter-chip ${active ? "active" : ""}`} onClick={onClick} type="button">
+      {label}
+    </button>
   );
 }
 

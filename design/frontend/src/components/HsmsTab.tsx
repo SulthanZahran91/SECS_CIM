@@ -1,4 +1,4 @@
-import { LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
+import { Badge, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
 import type { DeviceConfig, HsmsConfig } from "../types";
 
 interface HsmsTabProps {
@@ -15,9 +15,62 @@ function toNumber(value: string): number {
 }
 
 export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeDevice }: HsmsTabProps) {
+  const errors = {
+    mode: hsms.mode === "passive" || hsms.mode === "active" ? "" : "Choose passive or active.",
+    ip: hsms.ip.trim() ? "" : "Address is required.",
+    port: validateRange(hsms.port, 1, 65535, "Use a TCP port between 1 and 65535."),
+    sessionId: validateRange(hsms.sessionId, 0, 65535, "Use a 16-bit session ID."),
+    deviceId: validateRange(hsms.deviceId, 0, 65535, "Use a 16-bit device ID."),
+    t3: validatePositive(hsms.timers.t3, "T3 must be greater than zero."),
+    t5: validatePositive(hsms.timers.t5, "T5 must be greater than zero."),
+    t6: validatePositive(hsms.timers.t6, "T6 must be greater than zero."),
+    t7: validatePositive(hsms.timers.t7, "T7 must be greater than zero."),
+    t8: validatePositive(hsms.timers.t8, "T8 must be greater than zero."),
+    deviceName: device.name.trim() ? "" : "Device name is required.",
+    protocol: device.protocol.trim() ? "" : "Protocol label is required.",
+    mdln: device.mdln.trim() ? "" : "MDLN is required.",
+    softrev: device.softrev.trim() ? "" : "SOFTREV is required.",
+  };
+
+  const issues = Object.values(errors).filter(Boolean);
+  const hostStartupWarning =
+    hsms.handshake.autoHostStartup && hsms.mode !== "active"
+      ? "Active-mode host startup only runs when the connection mode is active."
+      : "";
+  const summaryTone = issues.length > 0 ? "red" : restartRequired || hostStartupWarning ? "yellow" : "green";
+  const summaryLabel =
+    issues.length > 0 ? `${issues.length} validation issue${issues.length === 1 ? "" : "s"}` : restartRequired ? "Restart pending" : "Ready";
+
   return (
     <div className="panel-scroll">
       <div className="panel-scroll-content">
+        <SectionHeader right={<Badge tone={summaryTone}>{summaryLabel}</Badge>}>Connection Readiness</SectionHeader>
+        <div className="section-body">
+          <div className={`hsms-callout ${issues.length > 0 ? "warning" : restartRequired || hostStartupWarning ? "pending" : "ready"}`}>
+            <div className="hsms-callout-header">
+              <div className="hsms-callout-copy-block">
+                <div className="rule-section-title">What applies when</div>
+                <p className="overview-copy">
+                  Save writes the working config to disk. Restart applies mode, address, and port changes to the live runtime.
+                </p>
+              </div>
+              <Badge tone={summaryTone}>{summaryLabel}</Badge>
+            </div>
+            {issues.length > 0 ? (
+              <div className="rule-readiness-list">
+                {issues.map((issue) => (
+                  <div className="meta-note" key={issue}>
+                    {issue}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="meta-note">No blocking validation issues detected in the current HSMS/device profile.</div>
+            )}
+            {hostStartupWarning ? <div className="meta-note">{hostStartupWarning}</div> : null}
+          </div>
+        </div>
+
         <SectionHeader right={restartRequired ? <span className="warning-text">restart required</span> : null}>
           Connection
         </SectionHeader>
@@ -29,6 +82,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeHsms({ ...hsms, mode: value })}
               options={["passive", "active"]}
               width={140}
+              error={errors.mode}
             />
             <LabeledInput
               label="Bind Address"
@@ -36,6 +90,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeHsms({ ...hsms, ip: value })}
               width={180}
               mono
+              error={errors.ip}
             />
             <LabeledInput
               label="Port"
@@ -44,6 +99,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               width={120}
               type="number"
               mono
+              error={errors.port}
             />
           </div>
         </div>
@@ -58,6 +114,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               width={120}
               type="number"
               mono
+              error={errors.sessionId}
             />
             <LabeledInput
               label="Device ID"
@@ -66,6 +123,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               width={120}
               type="number"
               mono
+              error={errors.deviceId}
             />
           </div>
         </div>
@@ -81,6 +139,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               type="number"
               mono
               hint="reply timeout"
+              error={errors.t3}
             />
             <LabeledInput
               label="T5"
@@ -90,6 +149,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               type="number"
               mono
               hint="connect sep."
+              error={errors.t5}
             />
             <LabeledInput
               label="T6"
@@ -99,6 +159,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               type="number"
               mono
               hint="control txn"
+              error={errors.t6}
             />
             <LabeledInput
               label="T7"
@@ -108,6 +169,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               type="number"
               mono
               hint="not selected"
+              error={errors.t7}
             />
             <LabeledInput
               label="T8"
@@ -117,6 +179,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               type="number"
               mono
               hint="inter-byte"
+              error={errors.t8}
             />
           </div>
         </div>
@@ -130,6 +193,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeDevice({ ...device, name: value })}
               width={180}
               mono
+              error={errors.deviceName}
             />
             <LabeledInput
               label="Protocol"
@@ -137,6 +201,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeDevice({ ...device, protocol: value })}
               width={140}
               mono
+              error={errors.protocol}
             />
             <LabeledInput
               label="MDLN"
@@ -144,6 +209,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeDevice({ ...device, mdln: value })}
               width={180}
               mono
+              error={errors.mdln}
             />
             <LabeledInput
               label="SOFTREV"
@@ -151,6 +217,7 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               onChange={(value) => onChangeDevice({ ...device, softrev: value })}
               width={140}
               mono
+              error={errors.softrev}
             />
           </div>
         </div>
@@ -167,7 +234,10 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
                 })
               }
             />
-            <span>Auto-respond to S1F13 (Establish Comm)</span>
+            <div className="toggle-copy-block">
+              <span className="toggle-copy-title">Auto-respond to S1F13 (Establish Comm)</span>
+              <span className="toggle-copy-hint">Useful when acting as equipment and expecting a host handshake.</span>
+            </div>
           </div>
           <div className="toggle-row">
             <TogglePill
@@ -179,7 +249,10 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
                 })
               }
             />
-            <span>Auto-respond to S1F1 (Are You There)</span>
+            <div className="toggle-copy-block">
+              <span className="toggle-copy-title">Auto-respond to S1F1 (Are You There)</span>
+              <span className="toggle-copy-hint">Keeps common availability checks from needing an explicit rule.</span>
+            </div>
           </div>
           <div className="toggle-row">
             <TogglePill
@@ -191,7 +264,10 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
                 })
               }
             />
-            <span>Auto-respond to S2F25 (Loopback)</span>
+            <div className="toggle-copy-block">
+              <span className="toggle-copy-title">Auto-respond to S2F25 (Loopback)</span>
+              <span className="toggle-copy-hint">Good default when the host uses loopback for transport validation.</span>
+            </div>
           </div>
           <div className="toggle-row">
             <TogglePill
@@ -203,10 +279,24 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
                 })
               }
             />
-            <span>Active-mode host startup (S1F13, S1F17, S2F31, S6F12)</span>
+            <div className="toggle-copy-block">
+              <div className="toggle-copy-header">
+                <span className="toggle-copy-title">Active-mode host startup (S1F13, S1F17, S2F31, S6F12)</span>
+                <Badge tone="yellow">Active only</Badge>
+              </div>
+              <span className="toggle-copy-hint">Preloads a minimal host-side bring-up sequence after connect/select.</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function validateRange(value: number, min: number, max: number, message: string): string {
+  return value >= min && value <= max ? "" : message;
+}
+
+function validatePositive(value: number, message: string): string {
+  return value > 0 ? "" : message;
 }

@@ -68,6 +68,88 @@ function sendSummary(action: RuleAction): string {
   return `S${stream}F${fn}${action.wbit ? " W" : ""}`;
 }
 
+interface RulePreset {
+  label: string;
+  description: string;
+  name: string;
+  match: Rule["match"];
+  conditions: RuleCondition[];
+  reply: Rule["reply"];
+  actions: Omit<RuleAction, "id">[];
+}
+
+const RULE_PRESETS: RulePreset[] = [
+  {
+    label: "Accept transfer",
+    description: "S2F41 TRANSFER with success ack and follow-up event.",
+    name: "accept transfer",
+    match: { stream: 2, function: 41, rcmd: "TRANSFER" },
+    conditions: [{ field: "carrier_exists", value: "CARR001" }],
+    reply: { stream: 2, function: 42, ack: 0 },
+    actions: [{ delayMs: 300, type: "send", stream: 6, function: 11, wbit: true, body: 'L:1 <A "TRANSFER_INITIATED">' }],
+  },
+  {
+    label: "Reject blocked",
+    description: "Reject TRANSFER when the source path is blocked.",
+    name: "reject when blocked",
+    match: { stream: 2, function: 41, rcmd: "TRANSFER" },
+    conditions: [{ field: "ports.LP01", value: "blocked" }],
+    reply: { stream: 2, function: 42, ack: 3 },
+    actions: [],
+  },
+  {
+    label: "Loopback ack",
+    description: "Respond to S2F25 loopback requests without extra side effects.",
+    name: "ack loopback",
+    match: { stream: 2, function: 25, rcmd: "" },
+    conditions: [],
+    reply: { stream: 2, function: 26, ack: 0 },
+    actions: [],
+  },
+];
+
+function applyPreset(rule: Rule, preset: RulePreset): Rule {
+  return {
+    ...rule,
+    name: preset.name,
+    match: { ...preset.match },
+    conditions: preset.conditions.map((condition) => ({ ...condition })),
+    reply: { ...preset.reply },
+    actions: preset.actions.map((action) => ({
+      ...action,
+      id: crypto.randomUUID(),
+    })),
+  };
+}
+
+function collectRuleIssues(rule: Rule): string[] {
+  const issues: string[] = [];
+
+  if (!rule.name.trim()) {
+    issues.push("Rule name is required.");
+  }
+
+  rule.conditions.forEach((condition, index) => {
+    if (!condition.field.trim() || !condition.value.trim()) {
+      issues.push(`Condition ${index + 1} needs both a field and value.`);
+    }
+  });
+
+  rule.actions.forEach((action, index) => {
+    if (action.type === "send" && !(action.body ?? "").trim()) {
+      issues.push(`Send action ${index + 1} needs a message body.`);
+    }
+    if (action.type === "mutate" && !(action.target ?? "").trim()) {
+      issues.push(`Mutate action ${index + 1} needs a target path.`);
+    }
+    if (action.type === "mutate" && !(action.value ?? "").trim()) {
+      issues.push(`Mutate action ${index + 1} needs a new value.`);
+    }
+  });
+
+  return issues;
+}
+
 export function RulesTab({
   rules,
   expandedRuleId,
@@ -79,13 +161,25 @@ export function RulesTab({
   onMoveRule,
   onExportRule,
 }: RulesTabProps) {
+  const enabledRules = rules.filter((rule) => rule.enabled).length;
+
   return (
     <div className="panel-scroll">
       <div className="panel-scroll-content">
-        <SectionHeader right={<ActionButton variant="accent" onClick={onCreateRule}>+ New Rule</ActionButton>}>
+        <SectionHeader
+          right={
+            <div className="section-actions">
+              <Badge tone={enabledRules > 0 ? "green" : "neutral"}>{enabledRules} enabled</Badge>
+              <ActionButton variant="accent" onClick={onCreateRule}>
+                + New Rule
+              </ActionButton>
+            </div>
+          }
+        >
           {rules.length} rules
         </SectionHeader>
         <div className="rule-list">
+          {rules.length === 0 ? <div className="empty-copy padded">Create a rule to start responding to host traffic.</div> : null}
           {rules.map((rule, index) => (
             <RuleCard
               key={rule.id}
@@ -135,6 +229,8 @@ function RuleCard({
   onMoveDown,
   onExport,
 }: RuleCardProps) {
+  const issues = collectRuleIssues(rule);
+
   function updateRule(nextRule: Rule) {
     onChange({
       ...nextRule,
@@ -172,7 +268,11 @@ function RuleCard({
         <Badge tone="yellow">
           S{rule.match.stream}F{rule.match.function}
         </Badge>
-        <span className="rule-name">{rule.name}</span>
+        <div className="rule-title-block">
+          <span className="rule-name">{rule.name}</span>
+          <span className="rule-match-copy mono">{rule.match.rcmd ? `RCMD ${rule.match.rcmd}` : "Any payload"}</span>
+        </div>
+        <Badge tone={rule.reply.ack === 0 ? "green" : "red"}>ACK {rule.reply.ack}</Badge>
         <span className="rule-summary">
           {rule.conditions.length} cond · {rule.actions.length} action{rule.actions.length === 1 ? "" : "s"}
         </span>
@@ -193,6 +293,46 @@ function RuleCard({
                 }
                 width="100%"
               />
+            </div>
+          </section>
+
+          <section className={`rule-readiness ${issues.length ? "warning" : "ready"}`}>
+            <div className="rule-section-header">
+              <div className="rule-section-title">Readiness</div>
+              <Badge tone={issues.length ? "yellow" : "green"}>
+                {issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : "Ready"}
+              </Badge>
+            </div>
+            {issues.length ? (
+              <div className="rule-readiness-list">
+                {issues.map((issue) => (
+                  <div className="meta-note" key={issue}>
+                    {issue}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="meta-note">This rule has enough information to match traffic and emit its configured response.</div>
+            )}
+          </section>
+
+          <section className="rule-section">
+            <div className="rule-section-header">
+              <div className="rule-section-title">Starter Presets</div>
+              <span className="meta-note">Quick-fill a common pattern, then customize the details.</span>
+            </div>
+            <div className="preset-row">
+              {RULE_PRESETS.map((preset) => (
+                <button
+                  className="preset-card"
+                  key={preset.label}
+                  onClick={() => updateRule(applyPreset(rule, preset))}
+                  type="button"
+                >
+                  <span className="preset-title">{preset.label}</span>
+                  <span className="preset-copy">{preset.description}</span>
+                </button>
+              ))}
             </div>
           </section>
 

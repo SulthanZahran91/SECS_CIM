@@ -94,13 +94,58 @@ describe("MessageMonitor", () => {
       />,
     );
 
-    const jumpButton = await screen.findByRole("button", { name: "↓ 1 new message" });
+    const jumpButton = await screen.findByRole("button", { name: "Down 1 new message" });
     fireEvent.click(jumpButton);
 
     await waitFor(() => {
       expect(scrollTo).toHaveBeenCalled();
     });
-    expect(screen.queryByRole("button", { name: "↓ 1 new message" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Down 1 new message" })).not.toBeInTheDocument();
     expect(screen.getByText("Live tail")).toBeInTheDocument();
+  });
+
+  it("filters visible traffic by source, direction, and search text", () => {
+    const snapshot = makeSnapshot();
+    snapshot.messages.unshift({
+      id: "msg-0",
+      timestamp: "14:32:00.000",
+      direction: "IN",
+      sf: "S1F13",
+      label: "Establish Comm",
+      detail: {
+        stream: 1,
+        function: 13,
+        wbit: true,
+        body: "L:0",
+        rawSml: "S1F13 W L:0",
+      },
+      evaluations: [],
+    });
+
+    render(
+      <MessageMonitor
+        messages={snapshot.messages}
+        selectedMessageId={null}
+        detailTab="decoded"
+        onSelectMessage={vi.fn()}
+        onChangeDetailTab={vi.fn()}
+        onJumpToRule={vi.fn()}
+        onClearLog={vi.fn()}
+        onHide={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "System only" }));
+    expect(screen.getByText("Establish Comm")).toBeInTheDocument();
+    expect(screen.queryByText("Remote Command: TRANSFER")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Outgoing" }));
+    fireEvent.change(screen.getByLabelText("Search messages"), { target: { value: "Ack" } });
+
+    expect(screen.getByText("Remote Cmd Ack")).toBeInTheDocument();
+    expect(screen.queryByText("Establish Comm")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remote Command: TRANSFER")).not.toBeInTheDocument();
+    expect(screen.getByText("1/3 shown")).toBeInTheDocument();
   });
 });

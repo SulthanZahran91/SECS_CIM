@@ -48,4 +48,24 @@ describe("RulesTab", () => {
     expect(screen.getByText("S6F11")).toBeInTheDocument();
     expect(screen.getByText(/Handwrite the outbound message directly/)).toBeInTheDocument();
   });
+
+  it("surfaces readiness issues and applies starter presets", async () => {
+    const user = userEvent.setup();
+
+    render(<RulesTabHarness />);
+
+    expect(screen.getByText(/This rule has enough information to match traffic/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Body (SML)"), {
+      target: { value: "" },
+    });
+
+    expect(screen.getByText("Send action 1 needs a message body.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Reject blocked/i }));
+
+    expect(screen.getByDisplayValue("reject when blocked")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("blocked")).toBeInTheDocument();
+    expect(screen.getByText("ACK 3")).toBeInTheDocument();
+  });
 });

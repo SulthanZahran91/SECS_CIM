@@ -29,6 +29,7 @@ interface LabeledInputProps {
   mono?: boolean;
   min?: number;
   max?: number;
+  error?: string;
 }
 
 interface LabeledSelectProps {
@@ -37,6 +38,7 @@ interface LabeledSelectProps {
   options: string[];
   onChange: (value: string) => void;
   width?: number | string;
+  error?: string;
 }
 
 interface TogglePillProps {
@@ -84,12 +86,13 @@ export function LabeledInput({
   mono,
   min,
   max,
+  error,
 }: LabeledInputProps) {
   return (
-    <label className="field-group" style={width ? { width } : undefined}>
+    <label className={`field-group ${error ? "has-error" : ""}`} style={width ? { width } : undefined}>
       <span className="field-label">{label}</span>
       <input
-        className={`field-input ${mono ? "mono" : ""}`}
+        className={`field-input ${mono ? "mono" : ""} ${error ? "invalid" : ""}`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         type={type}
@@ -98,6 +101,7 @@ export function LabeledInput({
         spellCheck={false}
       />
       {hint ? <span className="field-hint">{hint}</span> : null}
+      {error ? <span className="field-error">{error}</span> : null}
     </label>
   );
 }
@@ -108,12 +112,17 @@ export function LabeledSelect({
   options,
   onChange,
   width,
+  error,
 }: LabeledSelectProps) {
   return (
-    <label className="field-group" style={width ? { width } : undefined}>
+    <label className={`field-group ${error ? "has-error" : ""}`} style={width ? { width } : undefined}>
       <span className="field-label">{label}</span>
       <div className="select-wrapper">
-        <select className="field-input" value={value} onChange={(event) => onChange(event.target.value)}>
+        <select
+          className={`field-input ${error ? "invalid" : ""}`}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
           {options.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -121,6 +130,7 @@ export function LabeledSelect({
           ))}
         </select>
       </div>
+      {error ? <span className="field-error">{error}</span> : null}
     </label>
   );
 }

@@ -147,8 +147,9 @@ describe("App", () => {
     await screen.findByText("2 rules");
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
 
-    expect(await screen.findByText("stocker-A")).toBeInTheDocument();
-    expect(screen.getByText("online-remote")).toBeInTheDocument();
+    expect(await screen.findByText("State Overview")).toBeInTheDocument();
+    expect((await screen.findAllByText("stocker-A")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("online-remote").length).toBeGreaterThan(0);
   });
 
   it("subscribes to live snapshot updates and refreshes runtime state", async () => {
@@ -186,7 +187,7 @@ describe("App", () => {
     expect(await screen.findByText("Messages: 3")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
-    expect(await screen.findByText("online-local")).toBeInTheDocument();
+    expect((await screen.findAllByText("online-local")).length).toBeGreaterThan(0);
   });
 
   it("surfaces runtime transport warnings from live snapshots", async () => {
@@ -203,7 +204,7 @@ describe("App", () => {
     });
 
     expect(await screen.findByText("Transport issue: connection refused")).toBeInTheDocument();
-    expect(screen.getByText("Transport issue")).toBeInTheDocument();
+    expect(screen.getAllByText("Transport issue").length).toBeGreaterThan(0);
   });
 
   it("shows a reconnecting warning when the live update stream drops", async () => {
@@ -259,5 +260,17 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Show log" }));
 
     expect(await screen.findByText("Message Log")).toBeInTheDocument();
+  });
+
+  it("shows the operations overview cards", async () => {
+    render(<App />);
+
+    await screen.findByText("2 rules");
+
+    expect(screen.getByText("Runtime health")).toBeInTheDocument();
+    expect(screen.getByText("Config readiness")).toBeInTheDocument();
+    expect(screen.getByText("Simulator posture")).toBeInTheDocument();
+    expect(screen.getByText("Recent activity")).toBeInTheDocument();
+    expect(screen.getByText("Suggested next step")).toBeInTheDocument();
   });
 });

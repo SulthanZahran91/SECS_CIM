@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useState } from "react";
 import { Toolbar } from "./components/Toolbar";
+import { OverviewPanel } from "./components/OverviewPanel";
 import { RulesTab } from "./components/RulesTab";
 import { StateTab } from "./components/StateTab";
 import { HsmsTab } from "./components/HsmsTab";
@@ -300,6 +301,8 @@ export default function App() {
         </section>
 
         <section className="right-panel">
+          <OverviewPanel snapshot={snapshot} />
+
           {logsHidden ? (
             <div className="monitor-collapsed">
               <span className="subtle-text">Message log hidden</span>
