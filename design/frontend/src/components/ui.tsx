@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 type BadgeTone = "green" | "blue" | "yellow" | "accent" | "red" | "teal" | "neutral";
 
@@ -10,6 +10,13 @@ interface BadgeProps {
 interface SectionHeaderProps {
   children: ReactNode;
   right?: ReactNode;
+}
+
+interface CollapsibleSectionProps {
+  title: string;
+  children: ReactNode;
+  right?: ReactNode;
+  defaultOpen?: boolean;
 }
 
 interface TabButtonProps {
@@ -157,5 +164,19 @@ export function ActionButton({ children, onClick, variant = "neutral", className
     <button className={`action-button ${variant} ${className}`} onClick={onClick} type="button">
       {children}
     </button>
+  );
+}
+
+export function CollapsibleSection({ title, children, right, defaultOpen = true }: CollapsibleSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="collapsible-section">
+      <button className="collapsible-header" onClick={() => setOpen(!open)} type="button">
+        <span className={`collapsible-chevron ${open ? "open" : ""}`}>▶</span>
+        <span className="collapsible-title">{title}</span>
+        {right ? <span className="collapsible-right">{right}</span> : null}
+      </button>
+      {open ? <div className="collapsible-body">{children}</div> : null}
+    </div>
   );
 }

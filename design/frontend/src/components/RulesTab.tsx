@@ -1,4 +1,4 @@
-import { ActionButton, Badge, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
+import { ActionButton, Badge, CollapsibleSection, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
 import type { Rule, RuleAction, RuleCondition } from "../types";
 
 interface RulesTabProps {
@@ -296,31 +296,21 @@ function RuleCard({
             </div>
           </section>
 
-          <section className={`rule-readiness ${issues.length ? "warning" : "ready"}`}>
-            <div className="rule-section-header">
-              <div className="rule-section-title">Readiness</div>
-              <Badge tone={issues.length ? "yellow" : "green"}>
-                {issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : "Ready"}
-              </Badge>
-            </div>
-            {issues.length ? (
+          {issues.length > 0 ? (
+            <CollapsibleSection
+              title="Readiness"
+              defaultOpen={false}
+              right={<Badge tone="yellow">{issues.length} issue{issues.length === 1 ? "" : "s"}</Badge>}
+            >
               <div className="rule-readiness-list">
                 {issues.map((issue) => (
-                  <div className="meta-note" key={issue}>
-                    {issue}
-                  </div>
+                  <div className="meta-note" key={issue}>{issue}</div>
                 ))}
               </div>
-            ) : (
-              <div className="meta-note">This rule has enough information to match traffic and emit its configured response.</div>
-            )}
-          </section>
+            </CollapsibleSection>
+          ) : null}
 
-          <section className="rule-section">
-            <div className="rule-section-header">
-              <div className="rule-section-title">Starter Presets</div>
-              <span className="meta-note">Quick-fill a common pattern, then customize the details.</span>
-            </div>
+          <CollapsibleSection title="Presets" defaultOpen={false}>
             <div className="preset-row">
               {RULE_PRESETS.map((preset) => (
                 <button
@@ -334,7 +324,7 @@ function RuleCard({
                 </button>
               ))}
             </div>
-          </section>
+          </CollapsibleSection>
 
           <section className="rule-section">
             <div className="rule-section-title">Match When Received</div>

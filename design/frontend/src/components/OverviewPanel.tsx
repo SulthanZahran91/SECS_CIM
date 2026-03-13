@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Badge } from "./ui";
 import type { Snapshot } from "../types";
 
@@ -15,147 +16,88 @@ interface FocusState {
 }
 
 export function OverviewPanel({ snapshot }: OverviewPanelProps) {
+  const [expanded, setExpanded] = useState(false);
   const enabledRules = snapshot.rules.filter((rule) => rule.enabled).length;
   const matchedMessages = snapshot.messages.filter((message) => Boolean(message.matchedRule)).length;
   const lastMessage = snapshot.messages[snapshot.messages.length - 1];
   const portStates = Object.values(snapshot.state.ports);
   const occupiedPorts = portStates.filter((status) => status === "occupied").length;
-  const blockedPorts = portStates.filter((status) => status === "blocked").length;
-  const emptyPorts = portStates.filter((status) => status === "empty").length;
   const focusState = summarizeFocus(snapshot);
 
   return (
     <section className="workspace-overview">
-      <div className="overview-strip">
-        <article className="overview-card">
-          <span className="overview-label">Runtime health</span>
-          <div className="overview-value-row">
-            <strong className={`overview-value ${runtimeValueClass(snapshot)}`}>
-              {snapshot.runtime.listening ? snapshot.runtime.hsmsState : "STOPPED"}
-            </strong>
-            <Badge tone={snapshot.runtime.lastError ? "red" : snapshot.runtime.listening ? "green" : "neutral"}>
-              {snapshot.runtime.lastError ? "Issue detected" : snapshot.runtime.listening ? "Live" : "Idle"}
-            </Badge>
-          </div>
-          <p className="overview-copy">
-            {snapshot.hsms.mode} endpoint {snapshot.hsms.ip}:{snapshot.hsms.port}
-          </p>
-          <div className="overview-metrics">
-            <div>
-              <span className="overview-metric-label">Session</span>
-              <span className="overview-metric-value mono">{snapshot.hsms.sessionId}</span>
-            </div>
-            <div>
-              <span className="overview-metric-label">Device ID</span>
-              <span className="overview-metric-value mono">{snapshot.hsms.deviceId}</span>
-            </div>
-          </div>
-        </article>
-
-        <article className="overview-card">
-          <span className="overview-label">Config readiness</span>
-          <div className="overview-value-row">
-            <strong className={`overview-value ${snapshot.runtime.dirty ? "value-warn" : "value-good"}`}>
-              {snapshot.runtime.dirty ? "Unsaved edits" : "Synced to disk"}
-            </strong>
-            <Badge tone={snapshot.runtime.restartRequired ? "yellow" : "teal"}>
-              {snapshot.runtime.restartRequired ? "Restart pending" : "Hot changes applied"}
-            </Badge>
-          </div>
-          <p className="overview-copy">Baseline file: {snapshot.runtime.configFile}</p>
-          <div className="overview-metrics">
-            <div>
-              <span className="overview-metric-label">Rules ready</span>
-              <span className="overview-metric-value">
-                {enabledRules}/{snapshot.rules.length}
-              </span>
-            </div>
-            <div>
-              <span className="overview-metric-label">Reload risk</span>
-              <span className="overview-metric-value">
-                {snapshot.runtime.dirty ? "Would discard edits" : "Clean"}
-              </span>
-            </div>
-          </div>
-        </article>
-
-        <article className="overview-card">
-          <span className="overview-label">Simulator posture</span>
-          <div className="overview-value-row">
-            <strong className="overview-value">{snapshot.device.name}</strong>
-            <Badge
-              tone={
-                snapshot.state.mode === "online-remote"
-                  ? "green"
-                  : snapshot.state.mode === "online-local"
-                    ? "yellow"
-                    : "red"
-              }
-            >
-              {snapshot.state.mode}
-            </Badge>
-          </div>
-          <p className="overview-copy">
-            {snapshot.device.protocol.toUpperCase()} simulator, {snapshot.device.mdln} / {snapshot.device.softrev}
-          </p>
-          <div className="overview-metrics">
-            <div>
-              <span className="overview-metric-label">Occupied</span>
-              <span className="overview-metric-value">{occupiedPorts}</span>
-            </div>
-            <div>
-              <span className="overview-metric-label">Empty</span>
-              <span className="overview-metric-value">{emptyPorts}</span>
-            </div>
-            <div>
-              <span className="overview-metric-label">Blocked</span>
-              <span className="overview-metric-value">{blockedPorts}</span>
-            </div>
-          </div>
-        </article>
-
-        <article className="overview-card">
-          <span className="overview-label">Recent activity</span>
-          <div className="overview-value-row">
-            <strong className="overview-value">{snapshot.messages.length} messages</strong>
-            <Badge tone={matchedMessages > 0 ? "accent" : "neutral"}>
-              {matchedMessages} rule-linked
-            </Badge>
-          </div>
-          <p className="overview-copy">
-            {lastMessage
-              ? `Latest ${lastMessage.direction} ${lastMessage.sf} at ${lastMessage.timestamp}`
-              : "No traffic captured yet."}
-          </p>
-          <div className="overview-metrics">
-            <div>
-              <span className="overview-metric-label">Tracked carriers</span>
-              <span className="overview-metric-value">{Object.keys(snapshot.state.carriers).length}</span>
-            </div>
-            <div>
-              <span className="overview-metric-label">Last label</span>
-              <span className="overview-metric-value mono">{lastMessage?.label ?? "waiting"}</span>
-            </div>
-          </div>
-        </article>
-      </div>
-
       <div className={`focus-banner tone-${focusState.tone}`}>
         <div className="focus-copy-block">
-          <span className="focus-label">Suggested next step</span>
           <div className="focus-title-row">
-            <h2 className="focus-title">{focusState.title}</h2>
             <Badge tone={focusState.tone}>{focusState.badge}</Badge>
+            <h2 className="focus-title">{focusState.title}</h2>
           </div>
-          <p className="focus-text">{focusState.copy}</p>
         </div>
-        <div className="shortcut-cluster" aria-label="Keyboard shortcuts">
-          <span className="shortcut-chip">Ctrl/Cmd+S Save</span>
-          <span className="shortcut-chip">Ctrl/Cmd+R Reload</span>
-          <span className="shortcut-chip">Ctrl/Cmd+1-3 Switch tabs</span>
-          <span className="shortcut-chip">Ctrl/Cmd+L Clear log</span>
-        </div>
+        <button className="text-button" onClick={() => setExpanded(!expanded)} type="button" style={{ fontSize: 11 }}>
+          {expanded ? "Less" : "More"}
+        </button>
       </div>
+
+      {expanded ? (
+        <div className="overview-strip">
+          <article className="overview-card">
+            <span className="overview-label">Runtime</span>
+            <div className="overview-value-row">
+              <strong className={`overview-value ${runtimeValueClass(snapshot)}`}>
+                {snapshot.runtime.listening ? snapshot.runtime.hsmsState : "STOPPED"}
+              </strong>
+              <Badge tone={snapshot.runtime.lastError ? "red" : snapshot.runtime.listening ? "green" : "neutral"}>
+                {snapshot.runtime.lastError ? "Issue" : snapshot.runtime.listening ? "Live" : "Idle"}
+              </Badge>
+            </div>
+            <p className="overview-copy">{snapshot.hsms.mode} {snapshot.hsms.ip}:{snapshot.hsms.port}</p>
+          </article>
+
+          <article className="overview-card">
+            <span className="overview-label">Config</span>
+            <div className="overview-value-row">
+              <strong className={`overview-value ${snapshot.runtime.dirty ? "value-warn" : "value-good"}`}>
+                {snapshot.runtime.dirty ? "Unsaved" : "Synced"}
+              </strong>
+              <Badge tone={snapshot.runtime.restartRequired ? "yellow" : "teal"}>
+                {enabledRules}/{snapshot.rules.length} rules
+              </Badge>
+            </div>
+          </article>
+
+          <article className="overview-card">
+            <span className="overview-label">Device</span>
+            <div className="overview-value-row">
+              <strong className="overview-value">{snapshot.device.name}</strong>
+              <Badge
+                tone={
+                  snapshot.state.mode === "online-remote"
+                    ? "green"
+                    : snapshot.state.mode === "online-local"
+                      ? "yellow"
+                      : "red"
+                }
+              >
+                {snapshot.state.mode}
+              </Badge>
+            </div>
+            <p className="overview-copy">{occupiedPorts} occupied ports</p>
+          </article>
+
+          <article className="overview-card">
+            <span className="overview-label">Traffic</span>
+            <div className="overview-value-row">
+              <strong className="overview-value">{snapshot.messages.length} msgs</strong>
+              <Badge tone={matchedMessages > 0 ? "accent" : "neutral"}>
+                {matchedMessages} matched
+              </Badge>
+            </div>
+            <p className="overview-copy">
+              {lastMessage ? `${lastMessage.direction} ${lastMessage.sf}` : "No traffic yet"}
+            </p>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -147,7 +147,6 @@ describe("App", () => {
     await screen.findByText("2 rules");
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
 
-    expect(await screen.findByText("State Overview")).toBeInTheDocument();
     expect((await screen.findAllByText("stocker-A")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("online-remote").length).toBeGreaterThan(0);
   });
@@ -262,15 +261,11 @@ describe("App", () => {
     expect(await screen.findByText("Message Log")).toBeInTheDocument();
   });
 
-  it("shows the operations overview cards", async () => {
+  it("shows the overview focus banner", async () => {
     render(<App />);
 
     await screen.findByText("2 rules");
 
-    expect(screen.getByText("Runtime health")).toBeInTheDocument();
-    expect(screen.getByText("Config readiness")).toBeInTheDocument();
-    expect(screen.getByText("Simulator posture")).toBeInTheDocument();
-    expect(screen.getByText("Recent activity")).toBeInTheDocument();
-    expect(screen.getByText("Suggested next step")).toBeInTheDocument();
+    expect(screen.getByText("Commit or discard the current config edits")).toBeInTheDocument();
   });
 });

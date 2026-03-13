@@ -54,13 +54,18 @@ describe("RulesTab", () => {
 
     render(<RulesTabHarness />);
 
-    expect(screen.getByText(/This rule has enough information to match traffic/)).toBeInTheDocument();
-
     fireEvent.change(screen.getByLabelText("Body (SML)"), {
       target: { value: "" },
     });
 
+    // Readiness section appears when there are issues - expand it
+    const readinessHeader = screen.getByText("Readiness");
+    await user.click(readinessHeader);
     expect(screen.getByText("Send action 1 needs a message body.")).toBeInTheDocument();
+
+    // Expand presets section and apply one
+    const presetsHeader = screen.getByText("Presets");
+    await user.click(presetsHeader);
 
     await user.click(screen.getByRole("button", { name: /Reject blocked/i }));
 

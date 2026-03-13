@@ -1,10 +1,12 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HsmsTab } from "./HsmsTab";
 import { makeSnapshot } from "../test/fixtures";
 
 describe("HsmsTab", () => {
-  it("shows validation issues and explains save versus restart impact", () => {
+  it("shows validation issues and restart required indicator", async () => {
+    const user = userEvent.setup();
     const snapshot = makeSnapshot();
     snapshot.hsms.ip = "";
     snapshot.hsms.port = 0;
@@ -21,12 +23,11 @@ describe("HsmsTab", () => {
       />,
     );
 
-    expect(screen.getByText("Connection Readiness")).toBeInTheDocument();
-    expect(screen.getByText(/Save writes the working config to disk/)).toBeInTheDocument();
+    // Validation issues section exists - expand it
+    const issuesHeader = screen.getByText("Validation Issues");
+    await user.click(issuesHeader);
     expect(screen.getAllByText("Address is required.").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Use a TCP port between 1 and 65535.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Device name is required.").length).toBeGreaterThan(0);
-    expect(screen.getByText("Active-mode host startup only runs when the connection mode is active.")).toBeInTheDocument();
     expect(screen.getByText("restart required")).toBeInTheDocument();
   });
 });

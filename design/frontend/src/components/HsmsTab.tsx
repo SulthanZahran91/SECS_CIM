@@ -1,4 +1,4 @@
-import { Badge, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
+import { Badge, CollapsibleSection, LabeledInput, LabeledSelect, TogglePill } from "./ui";
 import type { DeviceConfig, HsmsConfig } from "../types";
 
 interface HsmsTabProps {
@@ -44,51 +44,32 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
   return (
     <div className="panel-scroll">
       <div className="panel-scroll-content">
-        <SectionHeader right={<Badge tone={summaryTone}>{summaryLabel}</Badge>}>Connection Readiness</SectionHeader>
-        <div className="section-body">
-          <div className={`hsms-callout ${issues.length > 0 ? "warning" : restartRequired || hostStartupWarning ? "pending" : "ready"}`}>
-            <div className="hsms-callout-header">
-              <div className="hsms-callout-copy-block">
-                <div className="rule-section-title">What applies when</div>
-                <p className="overview-copy">
-                  Save writes the working config to disk. Restart applies mode, address, and port changes to the live runtime.
-                </p>
-              </div>
-              <Badge tone={summaryTone}>{summaryLabel}</Badge>
+        {issues.length > 0 ? (
+          <CollapsibleSection title="Validation Issues" defaultOpen={false} right={<Badge tone={summaryTone}>{summaryLabel}</Badge>}>
+            <div className="rule-readiness-list">
+              {issues.map((issue) => (
+                <div className="meta-note" key={issue}>{issue}</div>
+              ))}
             </div>
-            {issues.length > 0 ? (
-              <div className="rule-readiness-list">
-                {issues.map((issue) => (
-                  <div className="meta-note" key={issue}>
-                    {issue}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="meta-note">No blocking validation issues detected in the current HSMS/device profile.</div>
-            )}
             {hostStartupWarning ? <div className="meta-note">{hostStartupWarning}</div> : null}
-          </div>
-        </div>
+          </CollapsibleSection>
+        ) : null}
 
-        <SectionHeader right={restartRequired ? <span className="warning-text">restart required</span> : null}>
-          Connection
-        </SectionHeader>
-        <div className="section-body">
+        <CollapsibleSection title="Connection" right={restartRequired ? <span className="warning-text">restart required</span> : null}>
           <div className="field-row">
             <LabeledSelect
               label="Mode"
               value={hsms.mode}
               onChange={(value) => onChangeHsms({ ...hsms, mode: value })}
               options={["passive", "active"]}
-              width={140}
+              width={120}
               error={errors.mode}
             />
             <LabeledInput
-              label="Bind Address"
+              label="Address"
               value={hsms.ip}
               onChange={(value) => onChangeHsms({ ...hsms, ip: value })}
-              width={180}
+              width="1fr"
               mono
               error={errors.ip}
             />
@@ -96,22 +77,18 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               label="Port"
               value={hsms.port}
               onChange={(value) => onChangeHsms({ ...hsms, port: toNumber(value) })}
-              width={120}
+              width={90}
               type="number"
               mono
               error={errors.port}
             />
           </div>
-        </div>
-
-        <SectionHeader>Session</SectionHeader>
-        <div className="section-body">
-          <div className="field-row">
+          <div className="field-row" style={{ marginTop: 8 }}>
             <LabeledInput
               label="Session ID"
               value={hsms.sessionId}
               onChange={(value) => onChangeHsms({ ...hsms, sessionId: toNumber(value) })}
-              width={120}
+              width={90}
               type="number"
               mono
               error={errors.sessionId}
@@ -120,78 +97,76 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               label="Device ID"
               value={hsms.deviceId}
               onChange={(value) => onChangeHsms({ ...hsms, deviceId: toNumber(value) })}
-              width={120}
+              width={90}
               type="number"
               mono
               error={errors.deviceId}
             />
           </div>
-        </div>
+        </CollapsibleSection>
 
-        <SectionHeader right={<span className="subtle-text">seconds</span>}>Timers</SectionHeader>
-        <div className="section-body">
+        <CollapsibleSection title="Timers (seconds)" defaultOpen={false}>
           <div className="field-row compact">
             <LabeledInput
               label="T3"
               value={hsms.timers.t3}
               onChange={(value) => onChangeHsms({ ...hsms, timers: { ...hsms.timers, t3: toNumber(value) } })}
-              width={92}
+              width={72}
               type="number"
               mono
-              hint="reply timeout"
+              hint="reply"
               error={errors.t3}
             />
             <LabeledInput
               label="T5"
               value={hsms.timers.t5}
               onChange={(value) => onChangeHsms({ ...hsms, timers: { ...hsms.timers, t5: toNumber(value) } })}
-              width={92}
+              width={72}
               type="number"
               mono
-              hint="connect sep."
+              hint="connect"
               error={errors.t5}
             />
             <LabeledInput
               label="T6"
               value={hsms.timers.t6}
               onChange={(value) => onChangeHsms({ ...hsms, timers: { ...hsms.timers, t6: toNumber(value) } })}
-              width={92}
+              width={72}
               type="number"
               mono
-              hint="control txn"
+              hint="ctrl txn"
               error={errors.t6}
             />
             <LabeledInput
               label="T7"
               value={hsms.timers.t7}
               onChange={(value) => onChangeHsms({ ...hsms, timers: { ...hsms.timers, t7: toNumber(value) } })}
-              width={92}
+              width={72}
               type="number"
               mono
-              hint="not selected"
+              hint="not sel."
               error={errors.t7}
             />
             <LabeledInput
               label="T8"
               value={hsms.timers.t8}
               onChange={(value) => onChangeHsms({ ...hsms, timers: { ...hsms.timers, t8: toNumber(value) } })}
-              width={92}
+              width={72}
               type="number"
               mono
-              hint="inter-byte"
+              hint="byte"
               error={errors.t8}
             />
           </div>
-        </div>
+        </CollapsibleSection>
 
-        <SectionHeader>Device Identity</SectionHeader>
-        <div className="section-body">
+        <CollapsibleSection title="Device Identity" defaultOpen={false}>
           <div className="field-row">
             <LabeledInput
-              label="Device Name"
+              label="Name"
               value={device.name}
               onChange={(value) => onChangeDevice({ ...device, name: value })}
-              width={180}
+              width="1fr"
               mono
               error={errors.deviceName}
             />
@@ -199,15 +174,17 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               label="Protocol"
               value={device.protocol}
               onChange={(value) => onChangeDevice({ ...device, protocol: value })}
-              width={140}
+              width={100}
               mono
               error={errors.protocol}
             />
+          </div>
+          <div className="field-row" style={{ marginTop: 8 }}>
             <LabeledInput
               label="MDLN"
               value={device.mdln}
               onChange={(value) => onChangeDevice({ ...device, mdln: value })}
-              width={180}
+              width="1fr"
               mono
               error={errors.mdln}
             />
@@ -215,79 +192,66 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               label="SOFTREV"
               value={device.softrev}
               onChange={(value) => onChangeDevice({ ...device, softrev: value })}
-              width={140}
+              width="1fr"
               mono
               error={errors.softrev}
             />
           </div>
-        </div>
+        </CollapsibleSection>
 
-        <SectionHeader>Handshake Behavior</SectionHeader>
-        <div className="section-body stack-list">
-          <div className="toggle-row">
-            <TogglePill
-              checked={hsms.handshake.autoS1f13}
-              onToggle={() =>
-                onChangeHsms({
-                  ...hsms,
-                  handshake: { ...hsms.handshake, autoS1f13: !hsms.handshake.autoS1f13 },
-                })
-              }
-            />
-            <div className="toggle-copy-block">
-              <span className="toggle-copy-title">Auto-respond to S1F13 (Establish Comm)</span>
-              <span className="toggle-copy-hint">Useful when acting as equipment and expecting a host handshake.</span>
+        <CollapsibleSection title="Handshake" defaultOpen={false}>
+          <div className="stack-list">
+            <div className="toggle-row">
+              <TogglePill
+                checked={hsms.handshake.autoS1f13}
+                onToggle={() =>
+                  onChangeHsms({
+                    ...hsms,
+                    handshake: { ...hsms.handshake, autoS1f13: !hsms.handshake.autoS1f13 },
+                  })
+                }
+              />
+              <span className="toggle-copy-title">S1F13 Establish Comm</span>
+            </div>
+            <div className="toggle-row">
+              <TogglePill
+                checked={hsms.handshake.autoS1f1}
+                onToggle={() =>
+                  onChangeHsms({
+                    ...hsms,
+                    handshake: { ...hsms.handshake, autoS1f1: !hsms.handshake.autoS1f1 },
+                  })
+                }
+              />
+              <span className="toggle-copy-title">S1F1 Are You There</span>
+            </div>
+            <div className="toggle-row">
+              <TogglePill
+                checked={hsms.handshake.autoS2f25}
+                onToggle={() =>
+                  onChangeHsms({
+                    ...hsms,
+                    handshake: { ...hsms.handshake, autoS2f25: !hsms.handshake.autoS2f25 },
+                  })
+                }
+              />
+              <span className="toggle-copy-title">S2F25 Loopback</span>
+            </div>
+            <div className="toggle-row">
+              <TogglePill
+                checked={hsms.handshake.autoHostStartup}
+                onToggle={() =>
+                  onChangeHsms({
+                    ...hsms,
+                    handshake: { ...hsms.handshake, autoHostStartup: !hsms.handshake.autoHostStartup },
+                  })
+                }
+              />
+              <span className="toggle-copy-title">Host startup sequence</span>
+              <Badge tone="yellow">Active only</Badge>
             </div>
           </div>
-          <div className="toggle-row">
-            <TogglePill
-              checked={hsms.handshake.autoS1f1}
-              onToggle={() =>
-                onChangeHsms({
-                  ...hsms,
-                  handshake: { ...hsms.handshake, autoS1f1: !hsms.handshake.autoS1f1 },
-                })
-              }
-            />
-            <div className="toggle-copy-block">
-              <span className="toggle-copy-title">Auto-respond to S1F1 (Are You There)</span>
-              <span className="toggle-copy-hint">Keeps common availability checks from needing an explicit rule.</span>
-            </div>
-          </div>
-          <div className="toggle-row">
-            <TogglePill
-              checked={hsms.handshake.autoS2f25}
-              onToggle={() =>
-                onChangeHsms({
-                  ...hsms,
-                  handshake: { ...hsms.handshake, autoS2f25: !hsms.handshake.autoS2f25 },
-                })
-              }
-            />
-            <div className="toggle-copy-block">
-              <span className="toggle-copy-title">Auto-respond to S2F25 (Loopback)</span>
-              <span className="toggle-copy-hint">Good default when the host uses loopback for transport validation.</span>
-            </div>
-          </div>
-          <div className="toggle-row">
-            <TogglePill
-              checked={hsms.handshake.autoHostStartup}
-              onToggle={() =>
-                onChangeHsms({
-                  ...hsms,
-                  handshake: { ...hsms.handshake, autoHostStartup: !hsms.handshake.autoHostStartup },
-                })
-              }
-            />
-            <div className="toggle-copy-block">
-              <div className="toggle-copy-header">
-                <span className="toggle-copy-title">Active-mode host startup (S1F13, S1F17, S2F31, S6F12)</span>
-                <Badge tone="yellow">Active only</Badge>
-              </div>
-              <span className="toggle-copy-hint">Preloads a minimal host-side bring-up sequence after connect/select.</span>
-            </div>
-          </div>
-        </div>
+        </CollapsibleSection>
       </div>
     </div>
   );
