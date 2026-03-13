@@ -1,15 +1,14 @@
 import { startTransition, useEffect, useState } from "react";
 import { Toolbar } from "./components/Toolbar";
-import { OverviewPanel } from "./components/OverviewPanel";
+import { FocusBanner } from "./components/FocusBanner";
 import { RulesTab } from "./components/RulesTab";
-import { StateTab } from "./components/StateTab";
 import { HsmsTab } from "./components/HsmsTab";
 import { MessageMonitor } from "./components/MessageMonitor";
 import { TabButton } from "./components/ui";
 import { api } from "./lib/api";
 import { normalizeSnapshot } from "./lib/normalizeSnapshot";
 import { ruleToYaml } from "./lib/ruleToYaml";
-import type { DetailTab, DeviceConfig, HsmsConfig, LeftTab, Rule, Snapshot } from "./types";
+import type { DetailTab, DeviceConfig, HsmsConfig, Rule, Snapshot } from "./types";
 
 function hsmsConnectionChanged(left: HsmsConfig, right: HsmsConfig): boolean {
   return left.mode !== right.mode || left.ip !== right.ip || left.port !== right.port;
@@ -40,7 +39,7 @@ function markHsmsDirty(snapshot: Snapshot, hsms: HsmsConfig): Snapshot {
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [leftTab, setLeftTab] = useState<LeftTab>("rules");
+  const [leftTab, setLeftTab] = useState<"rules" | "hsms">("rules");
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("decoded");
@@ -112,11 +111,6 @@ export default function App() {
         return;
       }
       if (shortcut && event.key === "2") {
-        event.preventDefault();
-        setLeftTab("state");
-        return;
-      }
-      if (shortcut && event.key === "3") {
         event.preventDefault();
         setLeftTab("hsms");
         return;
@@ -261,9 +255,6 @@ export default function App() {
             <TabButton active={leftTab === "rules"} icon="⚙" onClick={() => setLeftTab("rules")}>
               Rules
             </TabButton>
-            <TabButton active={leftTab === "state"} icon="◉" onClick={() => setLeftTab("state")}>
-              State
-            </TabButton>
             <TabButton active={leftTab === "hsms"} icon="⇌" onClick={() => setLeftTab("hsms")}>
               HSMS
             </TabButton>
@@ -292,8 +283,6 @@ export default function App() {
             />
           ) : null}
 
-          {leftTab === "state" ? <StateTab device={snapshot.device} state={snapshot.state} /> : null}
-
           {leftTab === "hsms" ? (
             <HsmsTab
               hsms={snapshot.hsms}
@@ -306,7 +295,7 @@ export default function App() {
         </section>
 
         <section className={`right-panel ${logsHidden ? "collapsed" : ""}`}>
-          <OverviewPanel snapshot={snapshot} />
+          <FocusBanner snapshot={snapshot} />
 
           {logsHidden ? null : (
             <MessageMonitor

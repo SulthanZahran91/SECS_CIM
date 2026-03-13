@@ -375,189 +375,37 @@ textarea {
   flex-wrap: wrap;
 }
 
-.workspace-overview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background:
-    radial-gradient(circle at right top, rgba(91, 200, 196, 0.1), transparent 35%),
-    linear-gradient(180deg, rgba(15, 28, 36, 0.94), rgba(10, 20, 26, 0.88));
-}
-
-.overview-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.overview-card,
-.state-metric-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(39, 65, 77, 0.9);
-  background: linear-gradient(180deg, rgba(23, 42, 52, 0.9), rgba(14, 27, 34, 0.94));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
-}
-
-.overview-label {
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-dim);
-}
-
-.overview-value-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.overview-value {
-  color: var(--text-bright);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.value-good {
-  color: var(--green);
-}
-
-.value-warn {
-  color: var(--yellow);
-}
-
-.value-danger {
-  color: var(--red);
-}
-
-.value-accent {
-  color: var(--accent);
-}
-
-.overview-copy {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.overview-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.overview-metrics > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.overview-metric-label {
-  color: var(--text-dim);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.overview-metric-value {
-  color: var(--text-bright);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .focus-banner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
   background: rgba(12, 24, 31, 0.92);
 }
 
 .focus-banner.tone-green {
-  box-shadow: inset 4px 0 0 var(--green);
+  box-shadow: inset 3px 0 0 var(--green);
 }
 
 .focus-banner.tone-yellow {
-  box-shadow: inset 4px 0 0 var(--yellow);
+  box-shadow: inset 3px 0 0 var(--yellow);
 }
 
 .focus-banner.tone-red {
-  box-shadow: inset 4px 0 0 var(--red);
+  box-shadow: inset 3px 0 0 var(--red);
 }
 
 .focus-banner.tone-accent,
 .focus-banner.tone-blue {
-  box-shadow: inset 4px 0 0 var(--accent);
-}
-
-.focus-copy-block {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.focus-label {
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.focus-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .focus-title {
   margin: 0;
-  color: var(--text-bright);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.focus-text {
-  margin: 0;
   color: var(--text-dim);
   font-size: 12px;
-  max-width: 78ch;
-  line-height: 1.4;
-}
-
-.shortcut-cluster {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.shortcut-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(39, 65, 77, 0.9);
-  background: rgba(23, 42, 52, 0.72);
-  color: var(--text-dim);
-  font-size: 12px;
+  font-weight: 500;
 }
 
 .rule-list {
@@ -1079,11 +927,6 @@ textarea {
   gap: 12px;
 }
 
-.state-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
 
 .monitor-shell {
   display: flex;
@@ -1428,18 +1271,6 @@ textarea {
 }
 
 @media (max-width: 1400px) {
-  .overview-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .focus-banner {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .shortcut-cluster {
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 1200px) {
@@ -1484,8 +1315,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  .overview-strip,
-  .state-overview-grid,
   .preset-row {
     grid-template-columns: 1fr;
   }
@@ -1538,7 +1367,6 @@ textarea {
 
 @media (max-width: 640px) {
   .toolbar,
-  .workspace-overview,
   .banner,
   .monitor-collapsed,
   .message-header,

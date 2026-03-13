@@ -147,8 +147,8 @@ describe("App", () => {
     await screen.findByText("2 rules");
     fireEvent.keyDown(window, { key: "2", ctrlKey: true });
 
-    expect((await screen.findAllByText("stocker-A")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("online-remote").length).toBeGreaterThan(0);
+    expect(await screen.findByDisplayValue("0.0.0.0")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("5000")).toBeInTheDocument();
   });
 
   it("subscribes to live snapshot updates and refreshes runtime state", async () => {
@@ -184,9 +184,6 @@ describe("App", () => {
     });
 
     expect(await screen.findByText("Messages: 3")).toBeInTheDocument();
-
-    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
-    expect((await screen.findAllByText("online-local")).length).toBeGreaterThan(0);
   });
 
   it("surfaces runtime transport warnings from live snapshots", async () => {
@@ -260,7 +257,7 @@ describe("App", () => {
     expect(await screen.findByText("Message Log")).toBeInTheDocument();
   });
 
-  it("shows the overview focus banner", async () => {
+  it("shows the focus banner", async () => {
     render(<App />);
 
     await screen.findByText("2 rules");

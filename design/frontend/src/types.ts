@@ -124,5 +124,5 @@ export interface ConditionEvaluation {
   passed: boolean;
 }
 
-export type LeftTab = "rules" | "state" | "hsms";
+export type LeftTab = "rules" | "hsms";
 export type DetailTab = "decoded" | "raw" | "rule";
