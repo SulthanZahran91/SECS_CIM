@@ -15,6 +15,7 @@ Current reality:
 - The live UI now surfaces transport/runtime failures and supports paused vs. auto-tail monitor behavior during sustained sessions.
 - The live UI now also provides an operations overview, filterable message workspace, and improved responsive layout for day-to-day simulator operation.
 - The rule and HSMS editors now provide starter presets, inline validation, and clearer save-vs-restart guidance during authoring.
+- The rule editor now also renders a compact execution preview so inbound triggers, replies, delayed sends, and state mutations read as one causal flow.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
@@ -209,6 +210,7 @@ Done:
 - The Rules tab now uses a generic outbound-message editor with explicit `Stream`, `Function`, `W-Bit`, and hand-authored body text instead of a fixed `S6F11` report builder
 - The UI now opens with an operations overview strip, richer toolbar status, denser state summaries, and more responsive layout/styling for operator use on narrower screens
 - The authoring flows now include rule starter presets, rule readiness feedback, inline HSMS/device validation, and explicit save-versus-restart guidance for connection edits
+- The rule editor now includes an execution preview timeline that summarizes trigger, immediate reply, delayed outbound messages, and runtime mutations as the rule is edited
 
 Remaining:
 

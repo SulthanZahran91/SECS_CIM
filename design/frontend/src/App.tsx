@@ -2,6 +2,7 @@ import { startTransition, useEffect, useState } from "react";
 import { Toolbar } from "./components/Toolbar";
 import { FocusBanner } from "./components/FocusBanner";
 import { RulesTab } from "./components/RulesTab";
+import type { RuleTemplate } from "./components/RulesTab";
 import { HsmsTab } from "./components/HsmsTab";
 import { MessageMonitor } from "./components/MessageMonitor";
 import { TabButton } from "./components/ui";
@@ -196,6 +197,31 @@ export default function App() {
     );
   }
 
+  async function handleImportRules(templates: RuleTemplate[]) {
+    if (!snapshot || templates.length === 0) return;
+    setRequestError(null);
+    let latestSnapshot = snapshot;
+    try {
+      for (const template of templates) {
+        const prevIds = new Set(latestSnapshot.rules.map((r) => r.id));
+        latestSnapshot = await api.createRule();
+        const newRule = latestSnapshot.rules.find((r) => !prevIds.has(r.id));
+        if (!newRule) continue;
+        latestSnapshot = await api.updateRule({
+          ...newRule,
+          name: template.name,
+          match: template.match,
+          reply: template.reply,
+          enabled: true,
+        });
+      }
+      replaceSnapshot(latestSnapshot);
+      setNotice(`${templates.length} rule${templates.length === 1 ? "" : "s"} imported`);
+    } catch (importError) {
+      setRequestError(importError instanceof Error ? importError.message : "Import failed");
+    }
+  }
+
   function handleHsmsChange(config: HsmsConfig) {
     applyOptimistic(
       (current) => markHsmsDirty(current, config),
@@ -280,6 +306,7 @@ export default function App() {
               }}
               onMoveRule={(id, direction) => void run(() => api.moveRule(id, direction))}
               onExportRule={(rule) => void handleExportRule(rule)}
+              onImportRules={(templates) => void handleImportRules(templates)}
             />
           ) : null}
 

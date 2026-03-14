@@ -1,5 +1,12 @@
+import { useState } from "react";
 import { ActionButton, Badge, CollapsibleSection, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
 import type { Rule, RuleAction, RuleCondition } from "../types";
+
+export interface RuleTemplate {
+  name: string;
+  match: Rule["match"];
+  reply: Rule["reply"];
+}
 
 interface RulesTabProps {
   rules: Rule[];
@@ -11,6 +18,7 @@ interface RulesTabProps {
   onDeleteRule: (id: string) => void;
   onMoveRule: (id: string, direction: "up" | "down") => void;
   onExportRule: (rule: Rule) => void;
+  onImportRules: (templates: RuleTemplate[]) => void;
 }
 
 function toNumber(value: string): number {
@@ -68,6 +76,21 @@ function sendSummary(action: RuleAction): string {
   return `S${stream}F${fn}${action.wbit ? " W" : ""}`;
 }
 
+function formatSf(stream: number, fn: number): string {
+  return `S${stream}F${fn}`;
+}
+
+type PreviewStepKind = "trigger" | "reply" | "send" | "mutate";
+
+interface PreviewStep {
+  id: string;
+  offset: string;
+  kind: PreviewStepKind;
+  title: string;
+  summary: string;
+  detail?: string;
+}
+
 interface RulePreset {
   label: string;
   description: string;
@@ -107,6 +130,77 @@ const RULE_PRESETS: RulePreset[] = [
     actions: [],
   },
 ];
+
+interface ParsedBlock {
+  direction: "SEND" | "RECV";
+  stream: number;
+  fn: number;
+  wbit: boolean;
+  systemByte: number;
+  label: string;
+  rcmd: string;
+}
+
+function parseBlocks(text: string): ParsedBlock[] {
+  const rawBlocks = text.split(/(?=@)/);
+  const result: ParsedBlock[] = [];
+
+  for (const block of rawBlocks) {
+    const headerMatch = block.match(/\^SECS_II\^(RECV|SEND)/);
+    if (!headerMatch) continue;
+
+    const direction = headerMatch[1] as "SEND" | "RECV";
+    // Require S{n}F{m}; W-bit and label are optional
+    const sfMatch = block.match(/S(\d+)F(\d+)(\s+W,)?/);
+    if (!sfMatch) continue;
+
+    const stream = Number.parseInt(sfMatch[1], 10);
+    const fn = Number.parseInt(sfMatch[2], 10);
+    const wbit = !!sfMatch[3];
+    const labelMatch = block.match(/S\d+F\d+[^-\n]*-\s*([^\[<\n]+)/);
+    const label = labelMatch ? labelMatch[1].trim() : `S${stream}F${fn}`;
+
+    const sbyteMatch = block.match(/\[SystemByte = (\d+)\]/);
+    const systemByte = sbyteMatch ? Number.parseInt(sbyteMatch[1], 10) : -1;
+
+    let rcmd = "";
+    if (stream === 2 && fn === 41) {
+      const rcmdMatch = block.match(/<A,\d+\s+(\S+)\s*\[/);
+      if (rcmdMatch) rcmd = rcmdMatch[1];
+    }
+
+    result.push({ direction, stream, fn, wbit, systemByte, label, rcmd });
+  }
+
+  return result;
+}
+
+export function parseLogRoutine(text: string): RuleTemplate[] {
+  const blocks = parseBlocks(text);
+  const templates: RuleTemplate[] = [];
+  const seen = new Set<string>();
+
+  for (const block of blocks) {
+    // Log is equipment-perspective. Equipment SEND W = simulator (host) receives and must reply.
+    if (block.direction !== "SEND" || !block.wbit) continue;
+
+    // Find the equipment RECV with matching SystemByte (that's the reply the host sent back).
+    const replyBlock = blocks.find((b) => b.direction === "RECV" && b.systemByte === block.systemByte);
+    if (!replyBlock) continue;
+
+    const key = `${block.stream}/${block.fn}/${block.rcmd}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    templates.push({
+      name: block.label.toLowerCase(),
+      match: { stream: block.stream, function: block.fn, rcmd: block.rcmd },
+      reply: { stream: replyBlock.stream, function: replyBlock.fn, ack: 0 },
+    });
+  }
+
+  return templates;
+}
 
 function applyPreset(rule: Rule, preset: RulePreset): Rule {
   return {
@@ -150,6 +244,102 @@ function collectRuleIssues(rule: Rule): string[] {
   return issues;
 }
 
+function buildPreviewSteps(rule: Rule): PreviewStep[] {
+  const conditionsSummary =
+    rule.conditions.length === 0
+      ? "No conditions required"
+      : `${rule.conditions.length} condition${rule.conditions.length === 1 ? "" : "s"} must pass`;
+  const conditionDetail =
+    rule.conditions.length === 0
+      ? undefined
+      : rule.conditions.map((condition) => `${condition.field || "field"} = ${condition.value || "value"}`).join(" • ");
+
+  const previewSteps: PreviewStep[] = [
+    {
+      id: "trigger",
+      offset: "IN",
+      kind: "trigger",
+      title: `Receive ${formatSf(rule.match.stream, rule.match.function)}${rule.match.rcmd ? ` RCMD ${rule.match.rcmd}` : ""}`,
+      summary: conditionsSummary,
+      detail: conditionDetail,
+    },
+    {
+      id: "reply",
+      offset: "+0ms",
+      kind: "reply",
+      title: `Reply ${formatSf(rule.reply.stream, rule.reply.function)}`,
+      summary: rule.reply.ack === 0 ? "ACK 0 success response" : `ACK ${rule.reply.ack} reject response`,
+      detail: "Immediate response emitted as soon as the trigger matches.",
+    },
+  ];
+
+  sortActions(rule.actions).forEach((action, index) => {
+    if (action.type === "send") {
+      previewSteps.push({
+        id: action.id,
+        offset: `+${action.delayMs}ms`,
+        kind: "send",
+        title: `Send ${sendSummary(action)}`,
+        summary: (action.body ?? "").trim() ? "Outbound SECS message" : "Outbound message body missing",
+        detail: compactBody(action.body),
+      });
+      return;
+    }
+
+    previewSteps.push({
+      id: action.id,
+      offset: `+${action.delayMs}ms`,
+      kind: "mutate",
+      title: "Mutate runtime state",
+      summary:
+        (action.target ?? "").trim() && (action.value ?? "").trim()
+          ? `Set ${action.target} -> ${action.value}`
+          : "Runtime mutation is still incomplete",
+      detail:
+        (action.target ?? "").trim() || (action.value ?? "").trim()
+          ? `${action.target || "target"} -> ${action.value || "value"}`
+          : undefined,
+    });
+  });
+
+  return previewSteps;
+}
+
+function compactBody(body?: string): string | undefined {
+  const compact = (body ?? "").replace(/\s+/g, " ").trim();
+  if (!compact) {
+    return undefined;
+  }
+
+  return compact.length > 84 ? `${compact.slice(0, 81)}...` : compact;
+}
+
+function previewTone(kind: PreviewStepKind): "green" | "blue" | "yellow" | "accent" | "red" | "teal" | "neutral" {
+  switch (kind) {
+    case "trigger":
+      return "accent";
+    case "reply":
+      return "green";
+    case "send":
+      return "yellow";
+    case "mutate":
+      return "blue";
+  }
+}
+
+function previewLabel(kind: PreviewStepKind): string {
+  switch (kind) {
+    case "trigger":
+      return "Trigger";
+    case "reply":
+      return "Reply";
+    case "send":
+      return "Send";
+    case "mutate":
+      return "Mutate";
+  }
+}
+
 export function RulesTab({
   rules,
   expandedRuleId,
@@ -160,8 +350,22 @@ export function RulesTab({
   onDeleteRule,
   onMoveRule,
   onExportRule,
+  onImportRules,
 }: RulesTabProps) {
+  const [logText, setLogText] = useState("");
+  const [logTemplates, setLogTemplates] = useState<RuleTemplate[]>([]);
   const enabledRules = rules.filter((rule) => rule.enabled).length;
+
+  function handleLogTextChange(value: string) {
+    setLogText(value);
+    setLogTemplates(parseLogRoutine(value));
+  }
+
+  function handleImport() {
+    onImportRules(logTemplates);
+    setLogText("");
+    setLogTemplates([]);
+  }
 
   return (
     <div className="panel-scroll">
@@ -178,6 +382,46 @@ export function RulesTab({
         >
           {rules.length} rules
         </SectionHeader>
+
+        <CollapsibleSection title="Import from Log" defaultOpen={false}>
+          <label className="field-group">
+            <span className="field-label">Paste log snippet</span>
+            <textarea
+              className="field-input mono payload-editor"
+              value={logText}
+              onChange={(event) => handleLogTextChange(event.target.value)}
+              placeholder={"@2026/03/11^INFO^SECS_II^SEND\n2026/03/11 S6F11 W, Event Report Send [SystemByte = 15]\n<L,3 ...>.\n@2026/03/11^INFO^SECS_II^RECV\n2026/03/11 S6F12  Event Report Acknowledge [SystemByte = 15]\n<B,1 0>."}
+              rows={6}
+              spellCheck={false}
+            />
+          </label>
+          {logTemplates.length > 0 ? (
+            <>
+              <div className="log-import-rule-list">
+                {logTemplates.map((t) => (
+                  <div className="log-import-rule-row" key={`${t.match.stream}/${t.match.function}/${t.match.rcmd}`}>
+                    <span className="mono">S{t.match.stream}F{t.match.function}</span>
+                    {t.match.rcmd ? <Badge tone="yellow">{t.match.rcmd}</Badge> : null}
+                    <span className="log-import-arrow">→</span>
+                    <span className="mono">S{t.reply.stream}F{t.reply.function}</span>
+                    <span className="log-import-label">{t.name}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="log-import-preview">
+                <ActionButton variant="accent" onClick={handleImport}>
+                  Import {logTemplates.length} Rule{logTemplates.length === 1 ? "" : "s"}
+                </ActionButton>
+              </div>
+            </>
+          ) : logText.trim() ? (
+            <div className="meta-note">No equipment SEND W exchanges found. Check the log format.</div>
+          ) : null}
+          <div className="meta-note">
+            Paste equipment log text to detect message exchanges. Each equipment <code>SEND W</code> paired with a matching <code>RECV</code> (by SystemByte) becomes a rule.
+          </div>
+        </CollapsibleSection>
+
         <div className="rule-list">
           {rules.length === 0 ? <div className="empty-copy padded">Create a rule to start responding to host traffic.</div> : null}
           {rules.map((rule, index) => (
@@ -230,6 +474,7 @@ function RuleCard({
   onExport,
 }: RuleCardProps) {
   const issues = collectRuleIssues(rule);
+  const previewSteps = buildPreviewSteps(rule);
 
   function updateRule(nextRule: Rule) {
     onChange({
@@ -322,6 +567,42 @@ function RuleCard({
                   <span className="preset-title">{preset.label}</span>
                   <span className="preset-copy">{preset.description}</span>
                 </button>
+              ))}
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title="Execution Preview"
+            defaultOpen
+            right={<Badge tone="teal">{previewSteps.length} steps</Badge>}
+          >
+            <div className="rule-preview-overview">
+              <div className="rule-preview-overview-copy">
+                <div className="rule-preview-overview-title">Expected flow</div>
+                <div className="rule-preview-overview-text">
+                  The simulator will evaluate the inbound trigger, reply immediately, then execute delayed side effects in timestamp order.
+                </div>
+              </div>
+              <Badge tone={rule.actions.length > 0 ? "accent" : "neutral"}>
+                {rule.actions.length} delayed effect{rule.actions.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <div className="rule-preview-timeline">
+              {previewSteps.map((step) => (
+                <div className={`rule-preview-step ${step.kind}`} key={step.id}>
+                  <div className="rule-preview-step-rail">
+                    <span className={`rule-preview-step-dot ${step.kind}`} />
+                  </div>
+                  <div className="rule-preview-step-body">
+                    <div className="rule-preview-step-head">
+                      <Badge tone={previewTone(step.kind)}>{previewLabel(step.kind)}</Badge>
+                      <span className="rule-preview-step-title">{step.title}</span>
+                      <span className="rule-preview-step-offset mono">{step.offset}</span>
+                    </div>
+                    <div className="rule-preview-step-summary">{step.summary}</div>
+                    {step.detail ? <div className="rule-preview-step-detail mono">{step.detail}</div> : null}
+                  </div>
+                </div>
               ))}
             </div>
           </CollapsibleSection>

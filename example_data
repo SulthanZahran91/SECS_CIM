@@ -1,0 +1,126 @@
+@2026/03/11 01:57:35.217^INFO^SECS_II^RECV 
+2026/03/11 01:57:35.217 S6F12  S06F12 - Event Report Acknowledge [SystemByte = 14]
+<B,1 0 [ACKC6]>.
+ 
+@2026/03/11 01:57:40.030^INFO^SECS_II^SEND 
+2026/03/11 01:57:40.030 S6F11 W, S6F11 - Event Report Send [SystemByte = 15]
+<L,3 [L0]
+<U4,1 0 [DATAID]>
+<U2,1 1 [CEID]>
+<L,1 [L1]
+<L,2 [L2]
+<U2,1 1 [REPTID]>
+<L,0 [Ln]>
+>
+>
+>.
+ 
+@2026/03/11 01:57:40.030^INFO^SECS_II^RECV 
+2026/03/11 01:57:40.030 S6F12  S06F12 - Event Report Acknowledge [SystemByte = 15]
+<B,1 0 [ACKC6]>.
+ 
+@2026/03/11 01:57:42.405^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.405 S1F13 W, Establish Communications Request. - Establish Communications Request [SystemByte = 16]
+<L,2 [L0]
+<A,11 B1FSTO12307 [MDLN]>
+<A,8 1.3.10.0 [SOFTVER]>
+>.
+ 
+@2026/03/11 01:57:42.405^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.405 S1F14  S01F14FromHost - Establish Communications Request Acknowledge [SystemByte = 16]
+<L,2 [L0]
+<B,1 0 []>
+<L,0 []>
+>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.420 S1F17 W, S01F17 - Request ON-LINE [SystemByte = 29110]
+.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.420 S1F18  Reply Request ON-LINE - Request ON-LINE Acknowledge [SystemByte = 29110]
+<B,1 0 [ACK]>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.420 S6F11 W, S6F11 - Event Report Send [SystemByte = 17]
+<L,3 [L0]
+<U4,1 0 [DATAID]>
+<U2,1 3 [CEID]>
+<L,1 [L1]
+<L,2 [L2]
+<U2,1 1 [REPTID]>
+<L,0 [Ln]>
+>
+>
+>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.420 S2F31 W, S02F31 - Date and Time Set Request [SystemByte = 29111]
+<A,16 2026031101574242 [TIMEDATE]>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.420 S2F32  Reply Date and Time Set Request - Date and Time Set Acknowledge [SystemByte = 29111]
+<B,1 0 [ACK]>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.420 S6F12  S06F12 - Event Report Acknowledge [SystemByte = 17]
+<B,1 0 [ACKC6]>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.420 S2F15 W, S02F15 - New Equipment Constant Send [SystemByte = 29113]
+<L,1 [L1]
+<L,2 []
+<U2,1 62 []>
+<A,11 B1FSTO12307 []>
+>
+>.
+ 
+@2026/03/11 01:57:42.420^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.420 S2F16  New Equipment Constant Send(ECS) - New Equipment Constant Acknowledge [SystemByte = 29113]
+<B,1 0 [ECA]>.
+ 
+@2026/03/11 01:57:42.452^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.420 S1F3 W, S01F03 - Selected Equipment Status Request [SystemByte = 29112]
+<L,1 [SVIDCOUNT]
+<U2,1 79 []>
+>.
+ 
+@2026/03/11 01:57:42.498^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.483 S1F4  Reply Selected Equipment Status Data. SVID=79 - Selected Equipment Status Data [SystemByte = 29112]
+<L,1 [L0]
+<U2,1 2 [SCState - SC_PAUSED]>
+>.
+ 
+@2026/03/11 01:57:42.514^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.498 S2F37 W, S02F37 - Enable or Disable Event Report [SystemByte = 29114]
+<L,2 [L0]
+<BOOLEAN,1 False []>
+<L,0 []>
+>.
+ 
+@2026/03/11 01:57:42.545^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.545 S2F38  Reply Enable or Disable Event Report - Enable or Disable Event Report Acknowledge [SystemByte = 29114]
+<B,1 0 [ACK]>.
+ 
+@2026/03/11 01:57:42.561^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.545 S1F3 W, S01F03 - Selected Equipment Status Request [SystemByte = 29115]
+<L,1 [SVIDCOUNT]
+<U2,1 79 []>
+>.
+ 
+@2026/03/11 01:57:42.561^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.561 S1F4  Reply Selected Equipment Status Data. SVID=79 - Selected Equipment Status Data [SystemByte = 29115]
+<L,1 [L0]
+<U2,1 2 [SCState - SC_PAUSED]>
+>.
+ 
+@2026/03/11 01:57:42.561^INFO^SECS_II^RECV 
+2026/03/11 01:57:42.561 S2F33 W, S02F33 - Define Report [SystemByte = 29116]
+<L,2 [L0]
+<U4,1 1 []>
+<L,0 []>
+>.
+ 
+@2026/03/11 01:57:42.561^INFO^SECS_II^SEND 
+2026/03/11 01:57:42.561 S2F34  Reply Define Report - Define Report Acknowledge [SystemByte = 29116]
+<B,1 0 [ACK]>.
