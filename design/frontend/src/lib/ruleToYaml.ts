@@ -21,22 +21,14 @@ export function ruleToYaml(rule: Rule): string {
       ? ["  actions: []"]
       : [
           "  actions:",
-          ...rule.actions.flatMap((action) => {
-            const lines = [
-              "    - delay_ms: " + action.delayMs,
-              "      type: " + quote(action.type),
-            ];
-            if (action.type === "send") {
-              lines.push("      stream: " + (action.stream ?? 0));
-              lines.push("      function: " + (action.function ?? 0));
-              lines.push("      wbit: " + Boolean(action.wbit));
-              lines.push("      body: " + quote(action.body ?? ""));
-            } else {
-              lines.push("      target: " + quote(action.target ?? ""));
-              lines.push("      value: " + quote(action.value ?? ""));
-            }
-            return lines;
-          }),
+          ...rule.actions.flatMap((action) => [
+            "    - delay_ms: " + action.delayMs,
+            "      type: " + quote(action.type),
+            "      stream: " + (action.stream ?? 0),
+            "      function: " + (action.function ?? 0),
+            "      wbit: " + Boolean(action.wbit),
+            "      body: " + quote(action.body ?? ""),
+          ]),
         ];
 
   return [

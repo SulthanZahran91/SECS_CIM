@@ -2,7 +2,6 @@ export interface Snapshot {
   runtime: RuntimeState;
   hsms: HsmsConfig;
   device: DeviceConfig;
-  state: StateSnapshot;
   rules: Rule[];
   messages: MessageRecord[];
 }
@@ -48,16 +47,6 @@ export interface DeviceConfig {
   softrev: string;
 }
 
-export interface StateSnapshot {
-  mode: string;
-  ports: Record<string, string>;
-  carriers: Record<string, CarrierState>;
-}
-
-export interface CarrierState {
-  location: string;
-}
-
 export interface Rule {
   id: string;
   name: string;
@@ -88,13 +77,11 @@ export interface RuleReply {
 export interface RuleAction {
   id: string;
   delayMs: number;
-  type: "send" | "mutate";
+  type: "send";
   stream?: number;
   function?: number;
   wbit?: boolean;
   body?: string;
-  target?: string;
-  value?: string;
 }
 
 export interface MessageRecord {

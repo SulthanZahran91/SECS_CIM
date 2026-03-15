@@ -15,7 +15,6 @@ describe("ruleToYaml", () => {
         wbit: true,
         body: 'L:2 <A "TRANSFER_INITIATED"> <I 7>',
       },
-      { id: "action-2", delayMs: 1200, type: "mutate", target: "ports.LP01", value: "empty" },
     ];
 
     const yaml = ruleToYaml(rule);
@@ -27,8 +26,6 @@ describe("ruleToYaml", () => {
     expect(yaml).toContain("      function: 11");
     expect(yaml).toContain("      wbit: true");
     expect(yaml).toContain('      body: "L:2 <A \\"TRANSFER_INITIATED\\"> <I 7>"');
-    expect(yaml).toContain('      target: "ports.LP01"');
-    expect(yaml).toContain('      value: "empty"');
   });
 
   it("renders empty conditions and actions as explicit arrays", () => {

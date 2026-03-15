@@ -892,11 +892,6 @@ textarea {
   box-shadow: 0 0 0 3px var(--yellow-soft);
 }
 
-.timeline-dot.mutate {
-  background: var(--orange);
-  box-shadow: 0 0 0 3px rgba(250, 179, 135, 0.16);
-}
-
 .timeline-delay,
 .meta-note {
   color: var(--text-dim);
@@ -1395,10 +1390,6 @@ textarea {
 
 .rule-preview-step-dot.send {
   background: var(--yellow);
-}
-
-.rule-preview-step-dot.mutate {
-  background: var(--blue);
 }
 
 .rule-preview-step-body {

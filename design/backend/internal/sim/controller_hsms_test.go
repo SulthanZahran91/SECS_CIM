@@ -35,9 +35,7 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 			WBit:     true,
 			Body:     "L:2 <A \"TRANSFER_INITIATED\"> <I 7>",
 		},
-		{ID: "action-2", DelayMS: 40, Type: "mutate", Target: "carriers.CARR001.location", Value: "SHELF_A01"},
-		{ID: "action-3", DelayMS: 40, Type: "mutate", Target: "ports.LP01", Value: "empty"},
-		{ID: "action-4", DelayMS: 40, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_COMPLETED\">"},
+		{ID: "action-2", DelayMS: 40, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_COMPLETED\">"},
 	}
 	if _, err := state.UpdateRule(rule); err != nil {
 		t.Fatalf("update rule timings: %v", err)
@@ -123,8 +121,7 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	}
 
 	waitFor(t, time.Second, func() bool {
-		snapshot := state.Snapshot()
-		return snapshot.State.Ports["LP01"] == "empty" && snapshot.State.Carriers["CARR001"].Location == "SHELF_A01"
+		return len(state.Snapshot().Messages) >= 6
 	})
 
 	snapshot := state.Snapshot()

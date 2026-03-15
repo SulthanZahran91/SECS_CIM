@@ -35,16 +35,6 @@ const baseSnapshot: Snapshot = {
     mdln: "STOCKER-SIM",
     softrev: "1.0.0",
   },
-  state: {
-    mode: "online-remote",
-    ports: {
-      LP01: "occupied",
-      LP02: "empty",
-    },
-    carriers: {
-      CARR001: { location: "LP01" },
-    },
-  },
   rules: [
     {
       id: "rule-1",

@@ -38,8 +38,7 @@ func Register(mux *http.ServeMux, state *store.Store, simulator *sim.Controller)
 	mux.Handle("/api/bootstrap", withCORS(http.HandlerFunc(handler.bootstrap)))
 	mux.Handle("/api/events", withCORS(http.HandlerFunc(handler.events)))
 	mux.Handle("/api/config", withCORS(http.HandlerFunc(handler.config)))
-	mux.Handle("/api/state", withCORS(http.HandlerFunc(handler.state)))
-	mux.Handle("/api/runtime/toggle", withCORS(http.HandlerFunc(handler.toggleRuntime)))
+mux.Handle("/api/runtime/toggle", withCORS(http.HandlerFunc(handler.toggleRuntime)))
 	mux.Handle("/api/sim/start", withCORS(http.HandlerFunc(handler.startSim)))
 	mux.Handle("/api/sim/stop", withCORS(http.HandlerFunc(handler.stopSim)))
 	mux.Handle("/api/sim/status", withCORS(http.HandlerFunc(handler.simStatus)))
@@ -81,15 +80,6 @@ func (h *Handler) config(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, h.store.ConfigSnapshot())
-}
-
-func (h *Handler) state(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, h.store.Snapshot().State)
 }
 
 func (h *Handler) toggleRuntime(w http.ResponseWriter, r *http.Request) {

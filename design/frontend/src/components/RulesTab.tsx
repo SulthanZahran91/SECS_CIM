@@ -26,44 +26,16 @@ function toNumber(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function createAction(type: RuleAction["type"]): RuleAction {
-  return type === "send"
-    ? {
-        id: crypto.randomUUID(),
-        delayMs: 0,
-        type,
-        stream: 6,
-        function: 11,
-        wbit: true,
-        body: 'L:1 <A "EVENT">',
-      }
-    : {
-        id: crypto.randomUUID(),
-        delayMs: 0,
-        type,
-        target: "",
-        value: "",
-      };
-}
-
-function convertAction(type: RuleAction["type"], action: RuleAction): RuleAction {
-  return type === "send"
-    ? {
-        id: action.id,
-        delayMs: action.delayMs,
-        type,
-        stream: action.stream ?? 6,
-        function: action.function ?? 11,
-        wbit: action.wbit ?? true,
-        body: action.body ?? "",
-      }
-    : {
-        id: action.id,
-        delayMs: action.delayMs,
-        type,
-        target: action.target ?? "",
-        value: action.value ?? "",
-      };
+function createAction(): RuleAction {
+  return {
+    id: crypto.randomUUID(),
+    delayMs: 0,
+    type: "send",
+    stream: 6,
+    function: 11,
+    wbit: true,
+    body: 'L:1 <A "EVENT">',
+  };
 }
 
 function sortActions(actions: RuleAction[]): RuleAction[] {
@@ -80,7 +52,7 @@ function formatSf(stream: number, fn: number): string {
   return `S${stream}F${fn}`;
 }
 
-type PreviewStepKind = "trigger" | "reply" | "send" | "mutate";
+type PreviewStepKind = "trigger" | "reply" | "send";
 
 interface PreviewStep {
   id: string;
@@ -113,10 +85,10 @@ const RULE_PRESETS: RulePreset[] = [
   },
   {
     label: "Reject blocked",
-    description: "Reject TRANSFER when the source path is blocked.",
+    description: "Reject TRANSFER when the equipment reports blocked status.",
     name: "reject when blocked",
     match: { stream: 2, function: 41, rcmd: "TRANSFER" },
-    conditions: [{ field: "ports.LP01", value: "blocked" }],
+    conditions: [{ field: "status", value: "blocked" }],
     reply: { stream: 2, function: 42, ack: 3 },
     actions: [],
   },
@@ -230,14 +202,8 @@ function collectRuleIssues(rule: Rule): string[] {
   });
 
   rule.actions.forEach((action, index) => {
-    if (action.type === "send" && !(action.body ?? "").trim()) {
+    if (!(action.body ?? "").trim()) {
       issues.push(`Send action ${index + 1} needs a message body.`);
-    }
-    if (action.type === "mutate" && !(action.target ?? "").trim()) {
-      issues.push(`Mutate action ${index + 1} needs a target path.`);
-    }
-    if (action.type === "mutate" && !(action.value ?? "").trim()) {
-      issues.push(`Mutate action ${index + 1} needs a new value.`);
     }
   });
 
@@ -273,32 +239,14 @@ function buildPreviewSteps(rule: Rule): PreviewStep[] {
     },
   ];
 
-  sortActions(rule.actions).forEach((action, index) => {
-    if (action.type === "send") {
-      previewSteps.push({
-        id: action.id,
-        offset: `+${action.delayMs}ms`,
-        kind: "send",
-        title: `Send ${sendSummary(action)}`,
-        summary: (action.body ?? "").trim() ? "Outbound SECS message" : "Outbound message body missing",
-        detail: compactBody(action.body),
-      });
-      return;
-    }
-
+  sortActions(rule.actions).forEach((action) => {
     previewSteps.push({
       id: action.id,
       offset: `+${action.delayMs}ms`,
-      kind: "mutate",
-      title: "Mutate runtime state",
-      summary:
-        (action.target ?? "").trim() && (action.value ?? "").trim()
-          ? `Set ${action.target} -> ${action.value}`
-          : "Runtime mutation is still incomplete",
-      detail:
-        (action.target ?? "").trim() || (action.value ?? "").trim()
-          ? `${action.target || "target"} -> ${action.value || "value"}`
-          : undefined,
+      kind: "send",
+      title: `Send ${sendSummary(action)}`,
+      summary: (action.body ?? "").trim() ? "Outbound SECS message" : "Outbound message body missing",
+      detail: compactBody(action.body),
     });
   });
 
@@ -314,7 +262,7 @@ function compactBody(body?: string): string | undefined {
   return compact.length > 84 ? `${compact.slice(0, 81)}...` : compact;
 }
 
-function previewTone(kind: PreviewStepKind): "green" | "blue" | "yellow" | "accent" | "red" | "teal" | "neutral" {
+function previewTone(kind: PreviewStepKind): "green" | "yellow" | "accent" | "neutral" {
   switch (kind) {
     case "trigger":
       return "accent";
@@ -322,8 +270,6 @@ function previewTone(kind: PreviewStepKind): "green" | "blue" | "yellow" | "acce
       return "green";
     case "send":
       return "yellow";
-    case "mutate":
-      return "blue";
   }
 }
 
@@ -335,8 +281,6 @@ function previewLabel(kind: PreviewStepKind): string {
       return "Reply";
     case "send":
       return "Send";
-    case "mutate":
-      return "Mutate";
   }
 }
 
@@ -765,14 +709,8 @@ function RuleCard({
             <div className="rule-section-header">
               <div className="rule-section-title">Then Side Effects</div>
               <div className="button-row">
-                <ActionButton variant="accent" onClick={() => updateActions([...rule.actions, createAction("send")])}>
+                <ActionButton variant="accent" onClick={() => updateActions([...rule.actions, createAction()])}>
                   + Message
-                </ActionButton>
-                <ActionButton
-                  variant="accent"
-                  onClick={() => updateActions([...rule.actions, createAction("mutate")])}
-                >
-                  + Mutate
                 </ActionButton>
               </div>
             </div>
@@ -786,18 +724,6 @@ function RuleCard({
                     <div className="timeline-delay">+{action.delayMs}ms</div>
                     <div className="timeline-editor">
                       <div className="field-row compact action-editor-row">
-                        <LabeledSelect
-                          label="Type"
-                          value={action.type}
-                          onChange={(value) => {
-                            const nextActions = rule.actions.map((item) =>
-                              item.id === action.id ? convertAction(value as RuleAction["type"], item) : item,
-                            );
-                            updateActions(nextActions);
-                          }}
-                          options={["send", "mutate"]}
-                          width={100}
-                        />
                         <LabeledInput
                           label="Delay (ms)"
                           value={action.delayMs}
@@ -811,111 +737,83 @@ function RuleCard({
                           type="number"
                           mono
                         />
-                        {action.type === "send" ? (
-                          <div className="event-generator">
-                            <div className="event-generator-head">
-                              <Badge tone="yellow">{sendSummary(action)}</Badge>
-                              <span className="event-generator-copy">Generic outbound SECS message</span>
-                            </div>
-                            <div className="field-row compact action-editor-row">
-                              <LabeledInput
-                                label="Stream"
-                                value={action.stream ?? 0}
-                                onChange={(value) => {
-                                  const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, stream: toNumber(value) } : item,
-                                  );
-                                  updateActions(nextActions);
-                                }}
-                                width={80}
-                                type="number"
-                                mono
-                                min={0}
-                                max={127}
-                              />
-                              <LabeledInput
-                                label="Function"
-                                value={action.function ?? 0}
-                                onChange={(value) => {
-                                  const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, function: toNumber(value) } : item,
-                                  );
-                                  updateActions(nextActions);
-                                }}
-                                width={90}
-                                type="number"
-                                mono
-                                min={0}
-                                max={255}
-                              />
-                              <LabeledSelect
-                                label="W-Bit"
-                                value={String(action.wbit ?? false)}
-                                onChange={(value) => {
-                                  const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, wbit: value === "true" } : item,
-                                  );
-                                  updateActions(nextActions);
-                                }}
-                                options={["true", "false"]}
-                                width={100}
-                              />
-                            </div>
-                            <label className="field-group">
-                              <span className="field-label">Body (SML)</span>
-                              <textarea
-                                className="field-input mono payload-editor"
-                                value={action.body ?? ""}
-                                onChange={(event) => {
-                                  const nextActions = rule.actions.map((item) =>
-                                    item.id === action.id ? { ...item, body: event.target.value } : item,
-                                  );
-                                  updateActions(nextActions);
-                                }}
-                                placeholder={'L:2\n  <A "TRANSFER">\n  <I 1>'}
-                                rows={6}
-                                spellCheck={false}
-                              />
-                            </label>
-                            <div className="meta-note">
-                              Handwrite the outbound message directly. Supported body syntax matches the monitor style:
-                              {" "}
-                              <code>L:n</code>, <code>&lt;A "text"&gt;</code>, <code>&lt;I 1&gt;</code>,
-                              {" "}
-                              <code>&lt;I1 -1&gt;</code>, <code>&lt;I2 -2&gt;</code>, <code>&lt;I4 -3&gt;</code>,
-                              {" "}
-                              <code>&lt;U1 1&gt;</code>, <code>&lt;U2 2&gt;</code>, <code>&lt;U4 4&gt;</code>,
-                              {" "}
-                              <code>&lt;B 0x00&gt;</code>, and <code>&lt;BOOLEAN TRUE&gt;</code>.
-                            </div>
+                        <div className="event-generator">
+                          <div className="event-generator-head">
+                            <Badge tone="yellow">{sendSummary(action)}</Badge>
+                            <span className="event-generator-copy">Generic outbound SECS message</span>
                           </div>
-                        ) : (
-                          <>
+                          <div className="field-row compact action-editor-row">
                             <LabeledInput
-                              label="Target Path"
-                              value={action.target ?? ""}
+                              label="Stream"
+                              value={action.stream ?? 0}
                               onChange={(value) => {
                                 const nextActions = rule.actions.map((item) =>
-                                  item.id === action.id ? { ...item, target: value } : item,
+                                  item.id === action.id ? { ...item, stream: toNumber(value) } : item,
                                 );
                                 updateActions(nextActions);
                               }}
-                              width={180}
+                              width={80}
+                              type="number"
                               mono
+                              min={0}
+                              max={127}
                             />
                             <LabeledInput
-                              label="New Value"
-                              value={action.value ?? ""}
+                              label="Function"
+                              value={action.function ?? 0}
                               onChange={(value) => {
                                 const nextActions = rule.actions.map((item) =>
-                                  item.id === action.id ? { ...item, value } : item,
+                                  item.id === action.id ? { ...item, function: toNumber(value) } : item,
                                 );
                                 updateActions(nextActions);
                               }}
-                              width={140}
+                              width={90}
+                              type="number"
+                              mono
+                              min={0}
+                              max={255}
                             />
-                          </>
-                        )}
+                            <LabeledSelect
+                              label="W-Bit"
+                              value={String(action.wbit ?? false)}
+                              onChange={(value) => {
+                                const nextActions = rule.actions.map((item) =>
+                                  item.id === action.id ? { ...item, wbit: value === "true" } : item,
+                                );
+                                updateActions(nextActions);
+                              }}
+                              options={["true", "false"]}
+                              width={100}
+                            />
+                          </div>
+                          <label className="field-group">
+                            <span className="field-label">Body (SML)</span>
+                            <textarea
+                              className="field-input mono payload-editor"
+                              value={action.body ?? ""}
+                              onChange={(event) => {
+                                const nextActions = rule.actions.map((item) =>
+                                  item.id === action.id ? { ...item, body: event.target.value } : item,
+                                );
+                                updateActions(nextActions);
+                              }}
+                              placeholder={'L:2\n  <A "TRANSFER">\n  <I 1>'}
+                              rows={6}
+                              spellCheck={false}
+                            />
+                          </label>
+                          <div className="meta-note">
+                            Handwrite the outbound message directly. Supported body syntax matches the monitor style:
+                            {" "}
+                            <code>L:n</code>, <code>&lt;A "text"&gt;</code>, <code>&lt;I 1&gt;</code>,
+                            {" "}
+                            <code>&lt;I1 -1&gt;</code>, <code>&lt;I2 -2&gt;</code>, <code>&lt;I4 -3&gt;</code>,
+                            {" "}
+                            <code>&lt;U1 1&gt;</code>, <code>&lt;U2 2&gt;</code>, <code>&lt;U4 4&gt;</code>,
+                            {" "}
+                            <code>&lt;B 0x00&gt;</code>, and <code>&lt;BOOLEAN TRUE&gt;</code>.
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <button

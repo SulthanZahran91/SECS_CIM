@@ -38,18 +38,6 @@ func seedSnapshot() model.Snapshot {
 			MDLN:     "STOCKER-SIM",
 			SoftRev:  "1.0.0",
 		},
-		State: model.StateSnapshot{
-			Mode: "online-remote",
-			Ports: map[string]string{
-				"LP01": "occupied",
-				"LP02": "empty",
-				"LP03": "blocked",
-			},
-			Carriers: map[string]model.CarrierState{
-				"CARR001": {Location: "LP01"},
-				"CARR002": {Location: "SHELF_A01"},
-			},
-		},
 		Rules: []model.Rule{
 			{
 				ID:      "rule-1",
@@ -61,7 +49,6 @@ func seedSnapshot() model.Snapshot {
 					RCMD:     "TRANSFER",
 				},
 				Conditions: []model.RuleCondition{
-					{Field: "carrier_exists", Value: "CARR001"},
 					{Field: "source_equals", Value: "LP01"},
 				},
 				Reply: model.RuleReply{
@@ -71,9 +58,7 @@ func seedSnapshot() model.Snapshot {
 				},
 				Actions: []model.RuleAction{
 					{ID: "action-1", DelayMS: 300, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_INITIATED\">"},
-					{ID: "action-2", DelayMS: 1200, Type: "mutate", Target: "carriers.CARR001.location", Value: "SHELF_A01"},
-					{ID: "action-3", DelayMS: 1200, Type: "mutate", Target: "ports.LP01", Value: "empty"},
-					{ID: "action-4", DelayMS: 1200, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_COMPLETED\">"},
+					{ID: "action-2", DelayMS: 1200, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"TRANSFER_COMPLETED\">"},
 				},
 			},
 			{
@@ -86,7 +71,7 @@ func seedSnapshot() model.Snapshot {
 					RCMD:     "TRANSFER",
 				},
 				Conditions: []model.RuleCondition{
-					{Field: "ports.LP01", Value: "blocked"},
+					{Field: "source_equals", Value: "LP02"},
 				},
 				Reply: model.RuleReply{
 					Stream:   2,
@@ -111,7 +96,7 @@ func seedSnapshot() model.Snapshot {
 					Ack:      0,
 				},
 				Actions: []model.RuleAction{
-					{ID: "action-5", DelayMS: 200, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"LOCATE_COMPLETE\">"},
+					{ID: "action-3", DelayMS: 200, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"LOCATE_COMPLETE\">"},
 				},
 			},
 		},
@@ -156,11 +141,10 @@ func seedSnapshot() model.Snapshot {
 					Stream:   2,
 					Function: 41,
 					WBit:     true,
-					Body:     "L:2\n  <A \"TRANSFER\">\n  L:2\n    L:2 <A \"CarrierID\"> <A \"CARR001\">\n    L:2 <A \"SourcePort\"> <A \"LP01\">",
-					RawSML:   "S2F41 W L:2 <A \"TRANSFER\"> L:2 L:2 <A \"CarrierID\"> <A \"CARR001\"> L:2 <A \"SourcePort\"> <A \"LP01\">",
+					Body:     "L:2\n  <A \"TRANSFER\">\n  L:2\n    L:2 <A \"SourcePort\"> <A \"LP01\">",
+					RawSML:   "S2F41 W L:2 <A \"TRANSFER\"> L:2 L:2 <A \"SourcePort\"> <A \"LP01\">",
 				},
 				Evaluations: []model.ConditionEvaluation{
-					{Field: "carrier_exists", Expected: "CARR001", Actual: "true", Passed: true},
 					{Field: "source_equals", Expected: "LP01", Actual: "LP01", Passed: true},
 				},
 			},

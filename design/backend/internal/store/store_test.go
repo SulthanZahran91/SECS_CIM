@@ -102,7 +102,7 @@ func TestUpdateRuleSortsActionsAndDefaultsBlankName(t *testing.T) {
 	rule.Actions = []model.RuleAction{
 		{ID: "action-z", DelayMS: 500, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"LATE\">"},
 		{ID: "action-a", DelayMS: 100, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"EARLY\">"},
-		{ID: "action-b", DelayMS: 500, Type: "mutate", Target: "ports.LP01", Value: "empty"},
+		{ID: "action-b", DelayMS: 500, Type: "send", Stream: 6, Function: 11, WBit: true, Body: "L:1 <A \"MIDDLE\">"},
 	}
 
 	snapshot, err := store.UpdateRule(rule)
@@ -224,13 +224,6 @@ handshake:
   auto_s1f1: true
   auto_s2f25: true
   auto_host_startup: false
-initial_state:
-  mode: online-local
-  ports:
-    LP09: occupied
-  carriers:
-    CARR009:
-      location: LP09
 rules:
   - name: file rule
     enabled: true
@@ -409,11 +402,6 @@ handshake:
   auto_s1f1: false
   auto_s2f25: true
   auto_host_startup: true
-initial_state:
-  mode: online-local
-  ports:
-    LP01: empty
-  carriers: {}
 rules:
   - name: yaml rule
     match:
@@ -488,10 +476,6 @@ handshake:
   auto_s1f1: true
   auto_s2f25: false
   auto_host_startup: false
-initial_state:
-  mode: online-remote
-  ports: {}
-  carriers: {}
 rules:
   - name: legacy rule
     match:

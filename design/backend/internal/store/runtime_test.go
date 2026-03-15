@@ -43,21 +43,18 @@ func TestProcessInboundMatchesFirstRuleAndSchedulesActions(t *testing.T) {
 	if result.Reply == nil {
 		t.Fatalf("expected immediate reply record")
 	}
-	if len(store.pending) != 4 {
-		t.Fatalf("expected 4 scheduled actions, got %d", len(store.pending))
+	if len(store.pending) != 2 {
+		t.Fatalf("expected 2 scheduled actions, got %d", len(store.pending))
 	}
 	if result.Snapshot.Runtime.Dirty {
 		t.Fatalf("expected runtime processing to leave config clean")
-	}
-	if result.Snapshot.State.Ports["LP01"] != "occupied" {
-		t.Fatalf("expected state mutation to be deferred until scheduled actions run")
 	}
 	if len(result.Snapshot.Messages) != 2 {
 		t.Fatalf("expected inbound and reply messages, got %d", len(result.Snapshot.Messages))
 	}
 
 	inbound := result.Snapshot.Messages[0]
-	if inbound.MatchedRuleID != "rule-1" || len(inbound.Evaluations) != 2 {
+	if inbound.MatchedRuleID != "rule-1" || len(inbound.Evaluations) != 1 {
 		t.Fatalf("expected inbound message diagnostics for matched rule, got %#v", inbound)
 	}
 	for _, evaluation := range inbound.Evaluations {
@@ -74,7 +71,6 @@ func TestProcessInboundMatchesFirstRuleAndSchedulesActions(t *testing.T) {
 func TestProcessInboundFallsThroughToLaterRule(t *testing.T) {
 	store := New()
 	store.ClearLog()
-	store.liveState.Ports["LP01"] = "blocked"
 
 	now := time.Date(2026, time.March, 10, 16, 5, 0, 0, time.UTC)
 	result := store.ProcessInbound(InboundMessage{
@@ -121,13 +117,10 @@ func TestProcessInboundCapturesDiagnosticsForNearMiss(t *testing.T) {
 	}
 
 	inbound := result.Snapshot.Messages[0]
-	if len(inbound.Evaluations) != 2 {
+	if len(inbound.Evaluations) != 1 {
 		t.Fatalf("expected diagnostics from first near-miss rule, got %#v", inbound)
 	}
-	if inbound.Evaluations[0].Field != "carrier_exists" || !inbound.Evaluations[0].Passed {
-		t.Fatalf("expected carrier_exists diagnostic to pass, got %#v", inbound.Evaluations)
-	}
-	if inbound.Evaluations[1].Field != "source_equals" || inbound.Evaluations[1].Passed {
+	if inbound.Evaluations[0].Field != "source_equals" || inbound.Evaluations[0].Passed {
 		t.Fatalf("expected source_equals diagnostic to fail, got %#v", inbound.Evaluations)
 	}
 }
@@ -141,7 +134,6 @@ func TestProcessInboundSupportsGenericMessageFieldConditions(t *testing.T) {
 		{Field: "DATA.RCMD", Value: "TRANSFER"},
 		{Field: "fields.SourcePort", Value: "LP01"},
 		{Field: "CarrierID", Value: "CARR001"},
-		{Field: "state.ports.LP01", Value: "occupied"},
 	}
 	if _, err := store.UpdateRule(rule); err != nil {
 		t.Fatalf("update rule: %v", err)
@@ -170,7 +162,7 @@ func TestProcessInboundSupportsGenericMessageFieldConditions(t *testing.T) {
 	}
 }
 
-func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
+func TestRunScheduledExecutesSendActionsInOrder(t *testing.T) {
 	store := New()
 	store.ClearLog()
 
@@ -192,9 +184,6 @@ func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
 	if len(early.Emitted) != 1 || early.Emitted[0].Label != "TRANSFER_INITIATED" {
 		t.Fatalf("expected first event at +300ms, got %#v", early.Emitted)
 	}
-	if early.Snapshot.State.Ports["LP01"] != "occupied" {
-		t.Fatalf("expected no mutation before +1200ms, got %#v", early.Snapshot.State)
-	}
 
 	late, err := store.RunScheduled(now.Add(1200 * time.Millisecond))
 	if err != nil {
@@ -203,14 +192,8 @@ func TestRunScheduledAppliesMutationsWithoutDirtyingConfig(t *testing.T) {
 	if len(late.Emitted) != 1 || late.Emitted[0].Label != "TRANSFER_COMPLETED" {
 		t.Fatalf("expected completion event at +1200ms, got %#v", late.Emitted)
 	}
-	if late.Snapshot.State.Ports["LP01"] != "empty" {
-		t.Fatalf("expected LP01 mutation to apply, got %#v", late.Snapshot.State.Ports)
-	}
-	if late.Snapshot.State.Carriers["CARR001"].Location != "SHELF_A01" {
-		t.Fatalf("expected carrier mutation to apply, got %#v", late.Snapshot.State.Carriers)
-	}
 	if late.Snapshot.Runtime.Dirty {
-		t.Fatalf("expected runtime mutations to leave config clean")
+		t.Fatalf("expected runtime actions to leave config clean")
 	}
 	if len(store.pending) != 0 {
 		t.Fatalf("expected scheduled queue to drain, got %d", len(store.pending))
@@ -281,49 +264,6 @@ func TestRunScheduledBuildsGenericOutboundMessage(t *testing.T) {
 	}
 }
 
-func TestRuntimeMutationsDoNotPersistAsConfig(t *testing.T) {
-	store, _ := newFileBackedStore(t)
-	store.ClearLog()
-
-	now := time.Date(2026, time.March, 10, 16, 20, 0, 0, time.UTC)
-	store.ProcessInbound(InboundMessage{
-		Stream:   2,
-		Function: 41,
-		WBit:     true,
-		RCMD:     "TRANSFER",
-		Fields: map[string]string{
-			"SourcePort": "LP01",
-		},
-	}, now)
-
-	if _, err := store.RunScheduled(now.Add(1200 * time.Millisecond)); err != nil {
-		t.Fatalf("run scheduled actions: %v", err)
-	}
-
-	mutated := store.Snapshot()
-	if mutated.State.Ports["LP01"] != "empty" {
-		t.Fatalf("expected live state to mutate before save, got %#v", mutated.State.Ports)
-	}
-	if mutated.Runtime.Dirty {
-		t.Fatalf("expected runtime-only state changes not to dirty config")
-	}
-
-	if _, err := store.Save(); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
-	reloaded, err := store.Reload()
-	if err != nil {
-		t.Fatalf("reload config: %v", err)
-	}
-
-	if reloaded.State.Ports["LP01"] != "occupied" {
-		t.Fatalf("expected reload to restore configured initial state, got %#v", reloaded.State.Ports)
-	}
-	if reloaded.State.Carriers["CARR001"].Location != "LP01" {
-		t.Fatalf("expected reload to restore configured carrier location, got %#v", reloaded.State.Carriers)
-	}
-}
-
 func TestRuntimePublishesSnapshotUpdatesForInboundAndScheduledActions(t *testing.T) {
 	store := New()
 	store.ClearLog()
@@ -356,9 +296,6 @@ func TestRuntimePublishesSnapshotUpdatesForInboundAndScheduledActions(t *testing
 	}
 
 	afterScheduled := awaitSnapshotUpdate(t, updates)
-	if afterScheduled.State.Ports["LP01"] != "empty" {
-		t.Fatalf("expected scheduled mutation to publish updated state, got %#v", afterScheduled.State.Ports)
-	}
 	if len(afterScheduled.Messages) != 4 {
 		t.Fatalf("expected scheduled update to append emitted events, got %d", len(afterScheduled.Messages))
 	}

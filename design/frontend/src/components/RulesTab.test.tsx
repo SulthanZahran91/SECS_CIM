@@ -143,26 +143,12 @@ describe("RulesTab", () => {
     expect(templates[1].reply).toEqual({ stream: 1, function: 14, ack: 0 });
   });
 
-  it("shows a compact execution preview that updates with delayed mutations", async () => {
-    const user = userEvent.setup();
-
+  it("shows a compact execution preview", () => {
     render(<RulesTabHarness />);
 
     expect(screen.getByText("Execution Preview")).toBeInTheDocument();
     expect(screen.getByText("Receive S2F41 RCMD TRANSFER")).toBeInTheDocument();
     expect(screen.getByText("Reply S2F42")).toBeInTheDocument();
     expect(screen.getByText("Send S6F11 W")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "+ Mutate" }));
-
-    fireEvent.change(screen.getByLabelText("Target Path"), {
-      target: { value: "carriers.CARR001.location" },
-    });
-    fireEvent.change(screen.getByLabelText("New Value"), {
-      target: { value: "SHELF_A01" },
-    });
-
-    expect(screen.getByText("Mutate runtime state")).toBeInTheDocument();
-    expect(screen.getByText("Set carriers.CARR001.location -> SHELF_A01")).toBeInTheDocument();
   });
 });

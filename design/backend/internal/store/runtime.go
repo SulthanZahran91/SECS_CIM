@@ -28,14 +28,7 @@ type RuntimeResult struct {
 	Reply         *model.MessageRecord
 	Emitted       []model.MessageRecord
 	Outbound      []hsms.Message
-	StateChanges  []StateChange
 	Snapshot      model.Snapshot
-}
-
-type StateChange struct {
-	Path     string
-	OldValue string
-	NewValue string
 }
 
 type scheduledAction struct {
@@ -63,7 +56,7 @@ func (s *Store) ProcessInbound(message InboundMessage, now time.Time) RuntimeRes
 			continue
 		}
 
-		evaluations, matched := evaluateConditions(s.liveState, message, rule.Conditions)
+		evaluations, matched := evaluateConditions(message, rule.Conditions)
 		if matched {
 			inboundRecord.MatchedRule = rule.Name
 			inboundRecord.MatchedRuleID = rule.ID
@@ -105,9 +98,8 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 	defer s.mu.Unlock()
 
 	result := RuntimeResult{
-		Emitted:      []model.MessageRecord{},
-		Outbound:     []hsms.Message{},
-		StateChanges: []StateChange{},
+		Emitted:  []model.MessageRecord{},
+		Outbound: []hsms.Message{},
 	}
 	changed := false
 
@@ -137,18 +129,6 @@ func (s *Store) RunScheduled(now time.Time) (RuntimeResult, error) {
 			s.messages = append(s.messages, record)
 			result.Emitted = append(result.Emitted, record)
 			result.Outbound = append(result.Outbound, message)
-			changed = true
-		case "mutate":
-			change, err := applyMutation(&s.liveState, pending.Action.Target, pending.Action.Value)
-			if err != nil {
-				if changed {
-					result.Snapshot = s.snapshotAndPublishLocked()
-				} else {
-					result.Snapshot = s.snapshotLocked()
-				}
-				return result, err
-			}
-			result.StateChanges = append(result.StateChanges, change)
 			changed = true
 		default:
 			if changed {
@@ -180,7 +160,7 @@ func matchesPattern(rule model.Rule, message InboundMessage) bool {
 	return true
 }
 
-func evaluateConditions(state model.StateSnapshot, message InboundMessage, conditions []model.RuleCondition) ([]model.ConditionEvaluation, bool) {
+func evaluateConditions(message InboundMessage, conditions []model.RuleCondition) ([]model.ConditionEvaluation, bool) {
 	if len(conditions) == 0 {
 		return []model.ConditionEvaluation{}, true
 	}
@@ -188,7 +168,7 @@ func evaluateConditions(state model.StateSnapshot, message InboundMessage, condi
 	evaluations := make([]model.ConditionEvaluation, 0, len(conditions))
 	allPassed := true
 	for _, condition := range conditions {
-		evaluation := evaluateCondition(state, message, condition)
+		evaluation := evaluateCondition(message, condition)
 		evaluations = append(evaluations, evaluation)
 		if !evaluation.Passed {
 			allPassed = false
@@ -198,21 +178,11 @@ func evaluateConditions(state model.StateSnapshot, message InboundMessage, condi
 	return evaluations, allPassed
 }
 
-func evaluateCondition(state model.StateSnapshot, message InboundMessage, condition model.RuleCondition) model.ConditionEvaluation {
+func evaluateCondition(message InboundMessage, condition model.RuleCondition) model.ConditionEvaluation {
 	actual := ""
 	passed := false
 
 	switch normalizeLookupPath(condition.Field) {
-	case "carrierexists":
-		carrierID := strings.TrimSpace(condition.Value)
-		if carrierID == "" {
-			carrierID = firstNonEmpty(
-				lookupMessageFieldValue(message, "CarrierID"),
-				lookupMessageFieldValue(message, "carrier_id"),
-			)
-		}
-		_, passed = state.Carriers[carrierID]
-		actual = boolString(passed)
 	case "sourceequals":
 		actual = firstNonEmpty(
 			lookupMessageFieldValue(message, "source"),
@@ -221,7 +191,7 @@ func evaluateCondition(state model.StateSnapshot, message InboundMessage, condit
 		)
 		passed = actual == condition.Value
 	default:
-		actual, ok := resolveConditionValue(state, message, condition.Field)
+		actual, ok := resolveMessagePath(message, condition.Field)
 		passed = ok && actual == condition.Value
 	}
 
@@ -230,81 +200,6 @@ func evaluateCondition(state model.StateSnapshot, message InboundMessage, condit
 		Expected: condition.Value,
 		Actual:   actual,
 		Passed:   passed,
-	}
-}
-
-func resolveConditionValue(state model.StateSnapshot, message InboundMessage, path string) (string, bool) {
-	if actual, ok := resolveStatePath(state, path); ok {
-		return actual, true
-	}
-
-	return resolveMessagePath(message, path)
-}
-
-func resolveStatePath(state model.StateSnapshot, path string) (string, bool) {
-	segments := splitLookupPath(path)
-	if len(segments) > 0 && normalizeLookupPath(segments[0]) == "state" {
-		segments = segments[1:]
-	}
-
-	switch {
-	case len(segments) == 1 && normalizeLookupPath(segments[0]) == "mode":
-		return state.Mode, true
-	case len(segments) == 2 && normalizeLookupPath(segments[0]) == "ports":
-		value, ok := state.Ports[segments[1]]
-		return value, ok
-	case len(segments) == 3 && normalizeLookupPath(segments[0]) == "carriers" && normalizeLookupPath(segments[2]) == "location":
-		carrier, ok := state.Carriers[segments[1]]
-		if !ok {
-			return "", false
-		}
-		return carrier.Location, true
-	default:
-		return "", false
-	}
-}
-
-func applyMutation(state *model.StateSnapshot, target string, value string) (StateChange, error) {
-	segments := splitLookupPath(target)
-	if len(segments) > 0 && normalizeLookupPath(segments[0]) == "state" {
-		segments = segments[1:]
-	}
-
-	switch {
-	case len(segments) == 1 && normalizeLookupPath(segments[0]) == "mode":
-		change := StateChange{
-			Path:     target,
-			OldValue: state.Mode,
-			NewValue: value,
-		}
-		state.Mode = value
-		return change, nil
-	case len(segments) == 2 && normalizeLookupPath(segments[0]) == "ports":
-		if state.Ports == nil {
-			state.Ports = map[string]string{}
-		}
-		change := StateChange{
-			Path:     target,
-			OldValue: state.Ports[segments[1]],
-			NewValue: value,
-		}
-		state.Ports[segments[1]] = value
-		return change, nil
-	case len(segments) == 3 && normalizeLookupPath(segments[0]) == "carriers" && normalizeLookupPath(segments[2]) == "location":
-		if state.Carriers == nil {
-			state.Carriers = map[string]model.CarrierState{}
-		}
-		carrier := state.Carriers[segments[1]]
-		change := StateChange{
-			Path:     target,
-			OldValue: carrier.Location,
-			NewValue: value,
-		}
-		carrier.Location = value
-		state.Carriers[segments[1]] = carrier
-		return change, nil
-	default:
-		return StateChange{}, fmt.Errorf("unsupported mutate target: %s", target)
 	}
 }
 

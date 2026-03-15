@@ -6,7 +6,6 @@ type Snapshot struct {
 	Runtime  RuntimeState    `json:"runtime"`
 	HSMS     HsmsConfig      `json:"hsms"`
 	Device   DeviceConfig    `json:"device"`
-	State    StateSnapshot   `json:"state"`
 	Rules    []Rule          `json:"rules"`
 	Messages []MessageRecord `json:"messages"`
 }
@@ -52,16 +51,6 @@ type DeviceConfig struct {
 	SoftRev  string `json:"softrev"`
 }
 
-type StateSnapshot struct {
-	Mode     string                  `json:"mode"`
-	Ports    map[string]string       `json:"ports"`
-	Carriers map[string]CarrierState `json:"carriers"`
-}
-
-type CarrierState struct {
-	Location string `json:"location"`
-}
-
 type Rule struct {
 	ID         string          `json:"id"`
 	Name       string          `json:"name"`
@@ -97,8 +86,6 @@ type RuleAction struct {
 	Function int    `json:"function,omitempty"`
 	WBit     bool   `json:"wbit,omitempty"`
 	Body     string `json:"body,omitempty"`
-	Target   string `json:"target,omitempty"`
-	Value    string `json:"value,omitempty"`
 }
 
 type MessageRecord struct {
@@ -130,24 +117,11 @@ type ConditionEvaluation struct {
 
 func CloneSnapshot(src Snapshot) Snapshot {
 	cloned := Snapshot{
-		Runtime: src.Runtime,
-		HSMS:    src.HSMS,
-		Device:  src.Device,
-		State: StateSnapshot{
-			Mode:     src.State.Mode,
-			Ports:    make(map[string]string, len(src.State.Ports)),
-			Carriers: make(map[string]CarrierState, len(src.State.Carriers)),
-		},
+		Runtime:  src.Runtime,
+		HSMS:     src.HSMS,
+		Device:   src.Device,
 		Rules:    make([]Rule, 0, len(src.Rules)),
 		Messages: make([]MessageRecord, 0, len(src.Messages)),
-	}
-
-	for key, value := range src.State.Ports {
-		cloned.State.Ports[key] = value
-	}
-
-	for key, value := range src.State.Carriers {
-		cloned.State.Carriers[key] = value
 	}
 
 	for _, rule := range src.Rules {

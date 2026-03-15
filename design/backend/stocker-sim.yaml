@@ -23,18 +23,6 @@ handshake:
   auto_s2f25: false
   auto_host_startup: false
 
-initial_state:
-  mode: online-remote
-  ports:
-    LP01: occupied
-    LP02: empty
-    LP03: blocked
-  carriers:
-    CARR001:
-      location: LP01
-    CARR002:
-      location: SHELF_A01
-
 rules:
   - name: accept transfer
     enabled: true
@@ -43,8 +31,6 @@ rules:
       function: 41
       rcmd: TRANSFER
     conditions:
-      - field: carrier_exists
-        value: CARR001
       - field: source_equals
         value: LP01
     reply:
@@ -59,14 +45,6 @@ rules:
         wbit: true
         body: 'L:1 <A "TRANSFER_INITIATED">'
       - delay_ms: 1200
-        type: mutate
-        target: carriers.CARR001.location
-        value: SHELF_A01
-      - delay_ms: 1200
-        type: mutate
-        target: ports.LP01
-        value: empty
-      - delay_ms: 1200
         type: send
         stream: 6
         function: 11
@@ -79,8 +57,8 @@ rules:
       function: 41
       rcmd: TRANSFER
     conditions:
-      - field: ports.LP01
-        value: blocked
+      - field: source_equals
+        value: LP02
     reply:
       stream: 2
       function: 42

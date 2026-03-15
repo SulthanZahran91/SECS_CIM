@@ -160,7 +160,6 @@ describe("App", () => {
 
     const liveSnapshot = makeSnapshot();
     liveSnapshot.runtime.hsmsState = "NOT CONNECTED";
-    liveSnapshot.state.mode = "online-local";
     liveSnapshot.messages.push({
       id: "msg-3",
       timestamp: "14:32:06.100",

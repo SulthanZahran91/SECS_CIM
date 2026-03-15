@@ -16,11 +16,10 @@ import (
 )
 
 type yamlConfig struct {
-	HSMS         yamlHSMSConfig      `yaml:"hsms"`
-	Device       model.DeviceConfig  `yaml:"device"`
-	Handshake    yamlHandshakeConfig `yaml:"handshake"`
-	InitialState model.StateSnapshot `yaml:"initial_state"`
-	Rules        []yamlRule          `yaml:"rules"`
+	HSMS      yamlHSMSConfig      `yaml:"hsms"`
+	Device    model.DeviceConfig  `yaml:"device"`
+	Handshake yamlHandshakeConfig `yaml:"handshake"`
+	Rules     []yamlRule          `yaml:"rules"`
 }
 
 type yamlHSMSConfig struct {
@@ -64,8 +63,6 @@ type yamlRuleAction struct {
 	DataID   string                 `yaml:"data_id,omitempty"`
 	CEID     string                 `yaml:"ceid,omitempty"`
 	Reports  []yamlRuleActionReport `yaml:"reports,omitempty"`
-	Target   string                 `yaml:"target,omitempty"`
-	Value    string                 `yaml:"value,omitempty"`
 }
 
 type yamlRuleActionReport struct {
@@ -117,7 +114,6 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 		},
 	}
 	snapshot.Device = config.Device
-	snapshot.State = normalizeState(config.InitialState)
 	snapshot.Rules = make([]model.Rule, 0, len(config.Rules))
 
 	actionID := 1
@@ -217,18 +213,12 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 
 		for _, action := range rule.Actions {
 			actionConfig := yamlRuleAction{
-				DelayMS: action.DelayMS,
-				Type:    action.Type,
-			}
-			switch action.Type {
-			case "send":
-				actionConfig.Stream = action.Stream
-				actionConfig.Function = action.Function
-				actionConfig.WBit = boolPointer(action.WBit)
-				actionConfig.Body = action.Body
-			case "mutate":
-				actionConfig.Target = action.Target
-				actionConfig.Value = action.Value
+				DelayMS:  action.DelayMS,
+				Type:     action.Type,
+				Stream:   action.Stream,
+				Function: action.Function,
+				WBit:     boolPointer(action.WBit),
+				Body:     action.Body,
 			}
 			ruleConfig.Events = append(ruleConfig.Events, actionConfig)
 		}
@@ -251,26 +241,8 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 			AutoS2F25:       snapshot.HSMS.Handshake.AutoS2F25,
 			AutoHostStartup: snapshot.HSMS.Handshake.AutoHostStartup,
 		},
-		InitialState: normalizeState(snapshot.State),
-		Rules:        rules,
+		Rules: rules,
 	}
-}
-
-func normalizeState(state model.StateSnapshot) model.StateSnapshot {
-	normalized := model.StateSnapshot{
-		Mode:     state.Mode,
-		Ports:    make(map[string]string, len(state.Ports)),
-		Carriers: make(map[string]model.CarrierState, len(state.Carriers)),
-	}
-
-	for key, value := range state.Ports {
-		normalized.Ports[key] = value
-	}
-	for key, value := range state.Carriers {
-		normalized.Carriers[key] = value
-	}
-
-	return normalized
 }
 
 func (r yamlRule) ruleActions() []yamlRuleAction {
@@ -283,13 +255,6 @@ func (r yamlRule) ruleActions() []yamlRuleAction {
 
 func ruleActionFromYAML(action yamlRuleAction) (model.RuleAction, error) {
 	switch action.Type {
-	case "mutate":
-		return model.RuleAction{
-			DelayMS: action.DelayMS,
-			Type:    "mutate",
-			Target:  action.Target,
-			Value:   action.Value,
-		}, nil
 	case "send":
 		wbit := false
 		if action.WBit != nil {

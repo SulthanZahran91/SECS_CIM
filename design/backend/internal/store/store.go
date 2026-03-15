@@ -19,7 +19,6 @@ type Store struct {
 	config        model.Snapshot
 	baseline      model.Snapshot
 	appliedHSMS   model.HsmsConfig
-	liveState     model.StateSnapshot
 	messages      []model.MessageRecord
 	pending       []scheduledAction
 	subscribers   map[chan model.Snapshot]struct{}
@@ -56,7 +55,6 @@ func NewFromFile(path string) (*Store, error) {
 	store.config = cloneConfigSnapshot(loaded)
 	store.baseline = cloneConfigSnapshot(loaded)
 	store.appliedHSMS = loaded.HSMS
-	store.liveState = normalizeState(loaded.State)
 	store.messages = cloneMessages(loaded.Messages)
 	store.pending = nil
 	store.updateRuntimeFlagsLocked()
@@ -70,7 +68,6 @@ func newStore(snapshot model.Snapshot, configPath string) *Store {
 		config:      cloneConfigSnapshot(snapshot),
 		baseline:    cloneConfigSnapshot(snapshot),
 		appliedHSMS: snapshot.HSMS,
-		liveState:   normalizeState(snapshot.State),
 		messages:    cloneMessages(snapshot.Messages),
 		pending:     nil,
 		subscribers: map[chan model.Snapshot]struct{}{},
@@ -175,7 +172,6 @@ func (s *Store) Reload() (model.Snapshot, error) {
 	s.config.Runtime.HSMSState = currentRuntime.HSMSState
 	s.config.Runtime.ConfigFile = currentRuntime.ConfigFile
 	s.config.Runtime.LastError = currentRuntime.LastError
-	s.liveState = normalizeState(nextConfig.State)
 	s.messages = currentMessages
 	s.pending = nil
 	s.updateRuntimeFlagsLocked()
@@ -301,8 +297,6 @@ func (s *Store) DuplicateRule(id string) (model.Snapshot, error) {
 				Function: action.Function,
 				WBit:     action.WBit,
 				Body:     action.Body,
-				Target:   action.Target,
-				Value:    action.Value,
 			})
 		}
 
@@ -370,7 +364,6 @@ func (s *Store) MoveRule(id string, direction string) (model.Snapshot, error) {
 
 func (s *Store) snapshotLocked() model.Snapshot {
 	snapshot := model.CloneSnapshot(s.config)
-	snapshot.State = normalizeState(s.liveState)
 	snapshot.Messages = cloneMessages(s.messages)
 	return snapshot
 }
