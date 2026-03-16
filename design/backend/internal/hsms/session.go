@@ -89,7 +89,7 @@ func (m *Manager) Send(message Message) error {
 	}
 
 	if message.SessionID == 0 {
-		message.SessionID = uint16(m.config.SessionID)
+		message.SessionID = model.HSMSHeaderSessionID(m.config)
 	}
 	if message.SystemBytes == 0 {
 		message.SystemBytes = m.nextSystemByte()
@@ -154,7 +154,7 @@ func (m *Manager) activeLoop(ctx context.Context) {
 		m.setCurrentSession(activeSession)
 		m.publishState("CONNECTED")
 
-		if err := activeSession.send(NewControlFrame(uint16(m.config.SessionID), m.nextSystemByte(), STypeSelectReq, 0)); err != nil {
+		if err := activeSession.send(NewControlFrame(model.HSMSHeaderSessionID(m.config), m.nextSystemByte(), STypeSelectReq, 0)); err != nil {
 			activeSession.close()
 			m.clearCurrentSession(activeSession)
 			if !sleepContext(ctx, timerDuration(m.config.Timers.T5, time.Second)) {
@@ -252,7 +252,7 @@ func (m *Manager) runSession(ctx context.Context, session *session, active bool)
 func (m *Manager) handleControlFrame(session *session, frame *Frame, active bool) error {
 	switch frame.SType {
 	case STypeSelectReq:
-		if err := session.send(NewControlFrame(uint16(m.config.SessionID), frame.SystemBytes, STypeSelectRsp, SelectStatusSuccess)); err != nil {
+		if err := session.send(NewControlFrame(model.HSMSHeaderSessionID(m.config), frame.SystemBytes, STypeSelectRsp, SelectStatusSuccess)); err != nil {
 			return err
 		}
 		session.setSelected(true)
@@ -271,13 +271,13 @@ func (m *Manager) handleControlFrame(session *session, frame *Frame, active bool
 	case STypeDeselectReq:
 		session.setSelected(false)
 		m.publishState("CONNECTED")
-		return session.send(NewControlFrame(uint16(m.config.SessionID), frame.SystemBytes, STypeDeselectRsp, 0))
+		return session.send(NewControlFrame(model.HSMSHeaderSessionID(m.config), frame.SystemBytes, STypeDeselectRsp, 0))
 	case STypeDeselectRsp:
 		session.setSelected(false)
 		m.publishState("CONNECTED")
 		return nil
 	case STypeLinktestReq:
-		return session.send(NewControlFrame(uint16(m.config.SessionID), frame.SystemBytes, STypeLinktestRsp, 0))
+		return session.send(NewControlFrame(model.HSMSHeaderSessionID(m.config), frame.SystemBytes, STypeLinktestRsp, 0))
 	case STypeLinktestRsp:
 		return nil
 	case STypeSeparateReq:
@@ -479,9 +479,10 @@ func traceControlFrame(direction string, conn net.Conn, frame *Frame) {
 	}
 
 	message := fmt.Sprintf(
-		"HSMS control %s %s sys=0x%08x local=%s remote=%s",
+		"HSMS control %s %s sid=0x%04x sys=0x%08x local=%s remote=%s",
 		direction,
 		controlFrameName(frame),
+		frame.SessionID,
 		frame.SystemBytes,
 		formatAddr(conn.LocalAddr()),
 		formatAddr(conn.RemoteAddr()),

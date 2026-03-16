@@ -295,6 +295,8 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 }
 
 func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) {
+	traceOutput := captureLogs(t)
+
 	state := store.New()
 	state.ClearLog()
 
@@ -308,6 +310,8 @@ func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) 
 	hsmsConfig.Mode = "active"
 	hsmsConfig.IP = "0.0.0.0"
 	hsmsConfig.Port = hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig.SessionID = 41
+	hsmsConfig.DeviceID = 9
 	hsmsConfig.Timers.T5 = 1
 	hsmsConfig.Timers.T6 = 1
 	state.UpdateHSMS(hsmsConfig)
@@ -330,7 +334,10 @@ func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) 
 	if selectReq.SType != hsms.STypeSelectReq {
 		t.Fatalf("expected active select.req, got %#v", selectReq)
 	}
-	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+	if selectReq.SessionID != model.HSMSHeaderSessionID(hsmsConfig) {
+		t.Fatalf("expected select.req header ID %d, got %d", model.HSMSHeaderSessionID(hsmsConfig), selectReq.SessionID)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(model.HSMSHeaderSessionID(hsmsConfig), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
 		t.Fatalf("write select.rsp: %v", err)
 	}
 
@@ -338,6 +345,8 @@ func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) 
 		snapshot := state.Snapshot()
 		return snapshot.Runtime.HSMSState == "SELECTED" && snapshot.Runtime.LastError == ""
 	})
+
+	assertLogContains(t, traceOutput, "HSMS control OUT Select.req sid=0x0009")
 }
 
 func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
@@ -355,6 +364,8 @@ func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 	hsmsConfig.Mode = "active"
 	hsmsConfig.IP = "127.0.0.1"
 	hsmsConfig.Port = hostPort
+	hsmsConfig.SessionID = 41
+	hsmsConfig.DeviceID = 9
 	hsmsConfig.Timers.T5 = 1
 	hsmsConfig.Timers.T6 = 1
 	hsmsConfig.Handshake.AutoHostStartup = true
@@ -379,7 +390,10 @@ func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 	if selectReq.SType != hsms.STypeSelectReq {
 		t.Fatalf("expected active select.req, got %#v", selectReq)
 	}
-	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+	if selectReq.SessionID != model.HSMSHeaderSessionID(hsmsConfig) {
+		t.Fatalf("expected select.req header ID %d, got %d", model.HSMSHeaderSessionID(hsmsConfig), selectReq.SessionID)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(model.HSMSHeaderSessionID(hsmsConfig), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
 		t.Fatalf("write select.rsp: %v", err)
 	}
 
@@ -387,8 +401,11 @@ func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 	if establishReq.Stream != 1 || establishReq.Function != 13 || !establishReq.WBit {
 		t.Fatalf("expected S1F13 bootstrap request, got %#v", establishReq)
 	}
+	if establishReq.SessionID != model.HSMSHeaderSessionID(hsmsConfig) {
+		t.Fatalf("expected startup header ID %d, got %d", model.HSMSHeaderSessionID(hsmsConfig), establishReq.SessionID)
+	}
 
-	writeMessage(t, conn, hsms.BuildS1F14(uint16(hsmsConfig.SessionID), establishReq.SystemBytes, "EQP-01", "1.2.3"))
+	writeMessage(t, conn, hsms.BuildS1F14(model.HSMSHeaderSessionID(hsmsConfig), establishReq.SystemBytes, "EQP-01", "1.2.3"))
 
 	onlineReq := readMessage(t, conn)
 	if onlineReq.Stream != 1 || onlineReq.Function != 17 || !onlineReq.WBit {
@@ -397,7 +414,7 @@ func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 
 	s1f18Body := itemPtr(hsms.Binary(0x00))
 	writeMessage(t, conn, hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
+		SessionID:   model.HSMSHeaderSessionID(hsmsConfig),
 		Stream:      1,
 		Function:    18,
 		WBit:        false,
@@ -420,7 +437,7 @@ func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 
 	s2f32Body := itemPtr(hsms.Binary(0x00))
 	writeMessage(t, conn, hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
+		SessionID:   model.HSMSHeaderSessionID(hsmsConfig),
 		Stream:      2,
 		Function:    32,
 		WBit:        false,

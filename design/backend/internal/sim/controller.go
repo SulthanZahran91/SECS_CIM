@@ -243,7 +243,7 @@ func (c *Controller) replyForResult(config model.Snapshot, inbound hsms.Message,
 
 	body := hsms.List(hsms.Binary(byte(matchedRule.Reply.Ack)), hsms.List())
 	return hsms.Message{
-		SessionID:   uint16(config.HSMS.SessionID),
+		SessionID:   model.HSMSHeaderSessionID(config.HSMS),
 		Stream:      byte(matchedRule.Reply.Stream),
 		Function:    byte(matchedRule.Reply.Function),
 		WBit:        false,
@@ -302,11 +302,11 @@ func inboundMessageFromHSMS(message hsms.Message, timestamp time.Time) store.Inb
 func autoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.Message, bool) {
 	switch {
 	case message.Stream == 1 && message.Function == 13 && config.HSMS.Handshake.AutoS1F13:
-		return hsms.BuildS1F14(uint16(config.HSMS.SessionID), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
+		return hsms.BuildS1F14(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
 	case message.Stream == 1 && message.Function == 1 && config.HSMS.Handshake.AutoS1F1:
-		return hsms.BuildS1F2(uint16(config.HSMS.SessionID), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
+		return hsms.BuildS1F2(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
 	case message.Stream == 2 && message.Function == 25 && config.HSMS.Handshake.AutoS2F25:
-		return hsms.BuildS2F26(uint16(config.HSMS.SessionID), message.SystemBytes, message.Body), true
+		return hsms.BuildS2F26(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, message.Body), true
 	default:
 		return hsms.Message{}, false
 	}
@@ -319,7 +319,7 @@ func hostAutoResponseForMessage(config model.Snapshot, message hsms.Message) (hs
 
 	switch {
 	case message.Stream == 6 && message.Function == 11 && message.WBit:
-		return hsms.BuildS6F12(uint16(config.HSMS.SessionID), message.SystemBytes, 0), true
+		return hsms.BuildS6F12(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, 0), true
 	default:
 		return hsms.Message{}, false
 	}

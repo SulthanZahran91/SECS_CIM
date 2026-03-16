@@ -305,15 +305,15 @@ func matchListOfLists(item hsms.Item, rowWidth int) bool {
 }
 
 func sendS1F13(config model.Snapshot) (hsms.Message, error) {
-	return hsms.BuildS1F13(uint16(config.HSMS.SessionID), 0), nil
+	return hsms.BuildS1F13(model.HSMSHeaderSessionID(config.HSMS), 0), nil
 }
 
 func sendS1F17(config model.Snapshot) (hsms.Message, error) {
-	return hsms.BuildS1F17(uint16(config.HSMS.SessionID), 0), nil
+	return hsms.BuildS1F17(model.HSMSHeaderSessionID(config.HSMS), 0), nil
 }
 
 func sendS2F31(config model.Snapshot) (hsms.Message, error) {
-	return hsms.BuildS2F31(uint16(config.HSMS.SessionID), 0, time.Now()), nil
+	return hsms.BuildS2F31(model.HSMSHeaderSessionID(config.HSMS), 0, time.Now()), nil
 }
 
 func sendConveyorS2F15(config model.Snapshot) (hsms.Message, error) {
@@ -416,7 +416,7 @@ func buildReportDefinitionItem(definition reportDefinition) hsms.Item {
 
 func buildStartupMessage(config model.Snapshot, stream byte, function byte, wbit bool, body *hsms.Item) hsms.Message {
 	return hsms.Message{
-		SessionID: uint16(config.HSMS.SessionID),
+		SessionID: model.HSMSHeaderSessionID(config.HSMS),
 		Stream:    stream,
 		Function:  function,
 		WBit:      wbit,

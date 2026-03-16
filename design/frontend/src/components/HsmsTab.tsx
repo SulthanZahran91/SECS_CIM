@@ -125,18 +125,21 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               width={90}
               type="number"
               mono
+              hint="sim cfg"
               error={errors.sessionId}
             />
             <LabeledInput
-              label="Device ID"
+              label="Device ID (Header)"
               value={hsms.deviceId}
               onChange={(value) => onChangeHsms({ ...hsms, deviceId: toNumber(value) })}
               width={90}
               type="number"
               mono
+              hint="HSMS 4-5"
               error={errors.deviceId}
             />
           </div>
+          <div className="meta-note">The HSMS wire header uses Device ID in bytes 4-5. Session ID is kept separately for simulator config compatibility.</div>
         </CollapsibleSection>
 
         <CollapsibleSection title="Timers (seconds)" defaultOpen={false}>

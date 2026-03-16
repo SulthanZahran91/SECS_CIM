@@ -116,6 +116,13 @@ type ConditionEvaluation struct {
 	Passed   bool   `json:"passed"`
 }
 
+// HSMSHeaderSessionID returns the 16-bit value written into bytes 4-5 of the HSMS header.
+// The simulator uses the configured Device ID on the wire for interoperability with
+// equipment stacks that validate the HSMS header against GEM device identity.
+func HSMSHeaderSessionID(config HsmsConfig) uint16 {
+	return uint16(config.DeviceID)
+}
+
 func CloneSnapshot(src Snapshot) Snapshot {
 	cloned := Snapshot{
 		Runtime:  src.Runtime,
