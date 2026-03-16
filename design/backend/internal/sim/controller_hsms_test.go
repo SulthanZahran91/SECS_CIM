@@ -293,7 +293,7 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 	assertLogContains(t, traceOutput, "HSMS control IN Select.rsp")
 }
 
-func TestControllerActiveHostStartupBootstrapsAfterSelect(t *testing.T) {
+func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 	state := store.New()
 	state.ClearLog()
 
@@ -311,6 +311,7 @@ func TestControllerActiveHostStartupBootstrapsAfterSelect(t *testing.T) {
 	hsmsConfig.Timers.T5 = 1
 	hsmsConfig.Timers.T6 = 1
 	hsmsConfig.Handshake.AutoHostStartup = true
+	hsmsConfig.Handshake.HostStartupProfile = model.HostStartupProfileStocker
 	state.UpdateHSMS(hsmsConfig)
 
 	controller := New(state)
@@ -426,6 +427,283 @@ func TestControllerActiveHostStartupBootstrapsAfterSelect(t *testing.T) {
 			}
 		}
 		return true
+	})
+}
+
+func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hostListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for active conveyor bootstrap test: %v", err)
+	}
+	defer hostListener.Close()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "active"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig.Timers.T5 = 1
+	hsmsConfig.Timers.T6 = 1
+	hsmsConfig.Handshake.AutoHostStartup = true
+	hsmsConfig.Handshake.HostStartupProfile = model.HostStartupProfileConveyor
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "CONNECTING" {
+		t.Fatalf("expected active controller to start CONNECTING, got %#v", started.Runtime)
+	}
+
+	conn := acceptEventually(t, hostListener)
+	defer conn.Close()
+
+	selectReq := readFrame(t, conn)
+	if selectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected active select.req, got %#v", selectReq)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write select.rsp: %v", err)
+	}
+
+	establishReq := readMessage(t, conn)
+	if establishReq.Stream != 1 || establishReq.Function != 13 || !establishReq.WBit {
+		t.Fatalf("expected S1F13 bootstrap request, got %#v", establishReq)
+	}
+	writeMessage(t, conn, hsms.BuildS1F14(uint16(hsmsConfig.SessionID), establishReq.SystemBytes, "EQP-01", "1.2.3"))
+
+	onlineReq := readMessage(t, conn)
+	if onlineReq.Stream != 1 || onlineReq.Function != 17 || !onlineReq.WBit {
+		t.Fatalf("expected S1F17 bootstrap request, got %#v", onlineReq)
+	}
+
+	onlineEvent := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000BEEF,
+		Body: itemPtr(hsms.List(
+			hsms.U4(0),
+			hsms.U2(3),
+			hsms.List(
+				hsms.List(
+					hsms.U2(1),
+					hsms.List(),
+				),
+			),
+		)),
+	}
+	writeMessage(t, conn, onlineEvent)
+
+	eventAck := readMessage(t, conn)
+	if eventAck.Stream != 6 || eventAck.Function != 12 || eventAck.SystemBytes != onlineEvent.SystemBytes {
+		t.Fatalf("expected S6F12 ack for interleaved online event, got %#v", eventAck)
+	}
+
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    18,
+		WBit:        false,
+		SystemBytes: onlineReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	timeSetReq := readMessage(t, conn)
+	if timeSetReq.Stream != 2 || timeSetReq.Function != 31 || !timeSetReq.WBit || timeSetReq.Body == nil || timeSetReq.Body.Type != hsms.ItemASCII {
+		t.Fatalf("expected S2F31 bootstrap request, got %#v", timeSetReq)
+	}
+	if len(timeSetReq.Body.Text) != 16 {
+		t.Fatalf("expected 16-char S2F31 timestamp, got %q", timeSetReq.Body.Text)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    32,
+		WBit:        false,
+		SystemBytes: timeSetReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	offlineReq := readMessage(t, conn)
+	if offlineReq.Stream != 2 || offlineReq.Function != 15 || !offlineReq.WBit || offlineReq.Body == nil {
+		t.Fatalf("expected S2F15 conveyor startup request, got %#v", offlineReq)
+	}
+	if got := offlineReq.Body.Compact(); got != `L:1 L:2 <U2 62> <A "B1ACNV15201">` {
+		t.Fatalf("unexpected S2F15 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    16,
+		WBit:        false,
+		SystemBytes: offlineReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	disableReportsReq := readMessage(t, conn)
+	if disableReportsReq.Stream != 2 || disableReportsReq.Function != 37 || !disableReportsReq.WBit || disableReportsReq.Body == nil {
+		t.Fatalf("expected S2F37 disable request, got %#v", disableReportsReq)
+	}
+	if got := disableReportsReq.Body.Compact(); got != "L:2 <BOOLEAN FALSE> L:0" {
+		t.Fatalf("unexpected first S2F37 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    38,
+		WBit:        false,
+		SystemBytes: disableReportsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	resetReportsReq := readMessage(t, conn)
+	if resetReportsReq.Stream != 2 || resetReportsReq.Function != 33 || !resetReportsReq.WBit || resetReportsReq.Body == nil {
+		t.Fatalf("expected S2F33 reset request, got %#v", resetReportsReq)
+	}
+	if got := resetReportsReq.Body.Compact(); got != "L:2 <U4 1> L:0" {
+		t.Fatalf("unexpected first S2F33 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    34,
+		WBit:        false,
+		SystemBytes: resetReportsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	defineReportsReq := readMessage(t, conn)
+	if defineReportsReq.Stream != 2 || defineReportsReq.Function != 33 || !defineReportsReq.WBit || defineReportsReq.Body == nil {
+		t.Fatalf("expected S2F33 define-report request, got %#v", defineReportsReq)
+	}
+	if defineReportsReq.Body.Type != hsms.ItemList || len(defineReportsReq.Body.Children) != 2 {
+		t.Fatalf("unexpected S2F33 define-report shape: %#v", defineReportsReq.Body)
+	}
+	reportList := defineReportsReq.Body.Children[1]
+	if reportList.Type != hsms.ItemList || len(reportList.Children) != len(conveyorReportDefinitions) {
+		t.Fatalf("expected %d report definitions, got %#v", len(conveyorReportDefinitions), reportList)
+	}
+	firstReport := reportList.Children[0]
+	lastReport := reportList.Children[len(reportList.Children)-1]
+	if firstReport.Children[0].Uint16 != 1 || lastReport.Children[0].Uint16 != 73 {
+		t.Fatalf("unexpected report definition bounds: first=%#v last=%#v", firstReport, lastReport)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    34,
+		WBit:        false,
+		SystemBytes: defineReportsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	linkReportsReq := readMessage(t, conn)
+	if linkReportsReq.Stream != 2 || linkReportsReq.Function != 35 || !linkReportsReq.WBit || linkReportsReq.Body == nil {
+		t.Fatalf("expected S2F35 link-report request, got %#v", linkReportsReq)
+	}
+	linkList := linkReportsReq.Body.Children[1]
+	if linkList.Type != hsms.ItemList || len(linkList.Children) != len(conveyorLinkedCEIDs) {
+		t.Fatalf("expected %d linked CEIDs, got %#v", len(conveyorLinkedCEIDs), linkList)
+	}
+	firstLink := linkList.Children[0]
+	lastLink := linkList.Children[len(linkList.Children)-1]
+	if firstLink.Children[0].Uint16 != 51 || firstLink.Children[1].Children[0].Uint16 != 1 {
+		t.Fatalf("unexpected first S2F35 link: %#v", firstLink)
+	}
+	if lastLink.Children[0].Uint16 != 711 || lastLink.Children[1].Children[0].Uint16 != 73 {
+		t.Fatalf("unexpected last S2F35 link: %#v", lastLink)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    36,
+		WBit:        false,
+		SystemBytes: linkReportsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	enableReportsReq := readMessage(t, conn)
+	if enableReportsReq.Stream != 2 || enableReportsReq.Function != 37 || !enableReportsReq.WBit || enableReportsReq.Body == nil {
+		t.Fatalf("expected second S2F37 request, got %#v", enableReportsReq)
+	}
+	if enableReportsReq.Body.Type != hsms.ItemList || len(enableReportsReq.Body.Children) != 2 {
+		t.Fatalf("unexpected second S2F37 shape: %#v", enableReportsReq.Body)
+	}
+	enabledCEIDs := enableReportsReq.Body.Children[1]
+	if enabledCEIDs.Type != hsms.ItemList || len(enabledCEIDs.Children) != len(conveyorEnabledCEIDs) {
+		t.Fatalf("expected %d enabled CEIDs, got %#v", len(conveyorEnabledCEIDs), enabledCEIDs)
+	}
+	if enabledCEIDs.Children[0].Uint16 != 1 || enabledCEIDs.Children[len(enabledCEIDs.Children)-1].Uint16 != 711 {
+		t.Fatalf("unexpected enabled CEID bounds: %#v", enabledCEIDs)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      2,
+		Function:    38,
+		WBit:        false,
+		SystemBytes: enableReportsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	disableAlarmsReq := readMessage(t, conn)
+	if disableAlarmsReq.Stream != 5 || disableAlarmsReq.Function != 3 || !disableAlarmsReq.WBit || disableAlarmsReq.Body == nil {
+		t.Fatalf("expected first S5F3 request, got %#v", disableAlarmsReq)
+	}
+	if got := disableAlarmsReq.Body.Compact(); got != "L:2 <B 0x00> <U4 0>" {
+		t.Fatalf("unexpected first S5F3 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      5,
+		Function:    4,
+		WBit:        false,
+		SystemBytes: disableAlarmsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	enableAlarmsReq := readMessage(t, conn)
+	if enableAlarmsReq.Stream != 5 || enableAlarmsReq.Function != 3 || !enableAlarmsReq.WBit || enableAlarmsReq.Body == nil {
+		t.Fatalf("expected second S5F3 request, got %#v", enableAlarmsReq)
+	}
+	if got := enableAlarmsReq.Body.Compact(); got != "L:2 <B 0x80> <U4 0>" {
+		t.Fatalf("unexpected second S5F3 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      5,
+		Function:    4,
+		WBit:        false,
+		SystemBytes: enableAlarmsReq.SystemBytes,
+		Body:        itemPtr(hsms.Binary(0x00)),
+	})
+
+	statusReq := readMessage(t, conn)
+	if statusReq.Stream != 1 || statusReq.Function != 3 || !statusReq.WBit || statusReq.Body == nil {
+		t.Fatalf("expected S1F3 status request, got %#v", statusReq)
+	}
+	if got := statusReq.Body.Compact(); got != "L:1 <U2 6>" {
+		t.Fatalf("unexpected S1F3 body: %s", got)
+	}
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    4,
+		WBit:        false,
+		SystemBytes: statusReq.SystemBytes,
+		Body:        itemPtr(hsms.List(hsms.U1(5))),
+	})
+
+	waitFor(t, time.Second, func() bool {
+		messages := state.Snapshot().Messages
+		return len(messages) >= 24 && messages[0].SF == "S1F13" && messages[len(messages)-1].SF == "S1F4"
 	})
 }
 

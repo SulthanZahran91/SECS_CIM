@@ -11,6 +11,7 @@ describe("HsmsTab", () => {
     snapshot.hsms.ip = "";
     snapshot.hsms.port = 0;
     snapshot.hsms.handshake.autoHostStartup = true;
+    snapshot.hsms.handshake.hostStartupProfile = "conveyor";
     snapshot.device.name = "";
 
     render(
@@ -29,5 +30,26 @@ describe("HsmsTab", () => {
     expect(screen.getAllByText("Address is required.").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Use a TCP port between 1 and 65535.").length).toBeGreaterThan(0);
     expect(screen.getByText("restart required")).toBeInTheDocument();
+  });
+
+  it("shows clearly differentiated startup profile options", async () => {
+    const user = userEvent.setup();
+    const snapshot = makeSnapshot();
+
+    render(
+      <HsmsTab
+        hsms={snapshot.hsms}
+        device={snapshot.device}
+        restartRequired={false}
+        onChangeHsms={vi.fn()}
+        onChangeDevice={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Handshake"));
+    expect(screen.getByText("Host startup profile")).toBeInTheDocument();
+    expect(screen.getByText("Stocker / Minimal")).toBeInTheDocument();
+    expect(screen.getByText("Conveyor / Example Log")).toBeInTheDocument();
+    expect(screen.getByText("No automated host bring-up runs after HSMS select.")).toBeInTheDocument();
   });
 });

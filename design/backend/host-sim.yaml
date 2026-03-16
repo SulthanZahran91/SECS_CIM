@@ -1,0 +1,27 @@
+hsms:
+  mode: active
+  ip: "127.0.0.1"
+  port: 5000
+  session_id: 1
+  device_id: 0
+  timers:
+    t3: 45
+    t5: 10
+    t6: 5
+    t7: 10
+    t8: 5
+
+device:
+  name: host-A
+  protocol: e88
+  mdln: HOST-SIM
+  softrev: 1.0.0
+
+handshake:
+  auto_s1f13: true
+  auto_s1f1: true
+  auto_s2f25: false
+  auto_host_startup: true
+  host_startup_profile: stocker
+
+rules: []

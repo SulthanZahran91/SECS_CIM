@@ -1,5 +1,6 @@
 import type {
   ConditionEvaluation,
+  HandshakeConfig,
   MessageRecord,
   Rule,
   RuleAction,
@@ -30,14 +31,31 @@ function normalizeMessage(message: MessageRecord): MessageRecord {
   };
 }
 
+function normalizeHostStartupProfile(handshake: Partial<HandshakeConfig> | undefined): string {
+  const rawProfile = String(handshake?.hostStartupProfile ?? "").trim().toLowerCase();
+  switch (rawProfile) {
+    case "stocker":
+    case "conveyor":
+      return rawProfile;
+    case "disabled":
+    case "none":
+    case "off":
+      return "disabled";
+    default:
+      return handshake?.autoHostStartup ? "stocker" : "disabled";
+  }
+}
+
 export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
+  const hostStartupProfile = normalizeHostStartupProfile(snapshot.hsms?.handshake);
   return {
     ...snapshot,
     hsms: {
       ...snapshot.hsms,
       handshake: {
         ...snapshot.hsms.handshake,
-        autoHostStartup: Boolean(snapshot.hsms?.handshake?.autoHostStartup),
+        autoHostStartup: hostStartupProfile !== "disabled",
+        hostStartupProfile,
       },
     },
     runtime: {

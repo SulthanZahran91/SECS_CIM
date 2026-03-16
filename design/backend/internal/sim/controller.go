@@ -16,22 +16,12 @@ import (
 
 var ErrNotRunning = errors.New("simulator is not running")
 
-type hostBootstrapPhase int
-
-const (
-	hostBootstrapIdle hostBootstrapPhase = iota
-	hostBootstrapAwaitingS1F14
-	hostBootstrapAwaitingS1F18
-	hostBootstrapAwaitingS2F32
-	hostBootstrapReady
-)
-
 type Controller struct {
 	store         *store.Store
 	mu            sync.Mutex
 	cancel        context.CancelFunc
 	transport     *hsms.Manager
-	hostBootstrap hostBootstrapPhase
+	hostBootstrap hostBootstrapState
 }
 
 type Status struct {
@@ -67,7 +57,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 	})
 	c.cancel = cancel
 	c.transport = transport
-	c.hostBootstrap = hostBootstrapIdle
+	c.hostBootstrap = hostBootstrapState{}
 	c.mu.Unlock()
 
 	c.store.RecordAppliedHSMS(appliedConfig)
@@ -91,7 +81,7 @@ func (c *Controller) Stop() model.Snapshot {
 	cancel := c.cancel
 	c.cancel = nil
 	c.transport = nil
-	c.hostBootstrap = hostBootstrapIdle
+	c.hostBootstrap = hostBootstrapState{}
 	c.mu.Unlock()
 
 	if cancel != nil {
@@ -170,7 +160,7 @@ func (c *Controller) updateRuntimeState(state string) {
 	c.mu.Lock()
 	running := c.cancel != nil
 	if state != "SELECTED" {
-		c.hostBootstrap = hostBootstrapIdle
+		c.hostBootstrap = hostBootstrapState{}
 	}
 	c.mu.Unlock()
 
@@ -325,21 +315,23 @@ func hostAutoResponseForMessage(config model.Snapshot, message hsms.Message) (hs
 
 func (c *Controller) beginHostBootstrap() {
 	config := c.store.ConfigSnapshot()
-	if !hostBootstrapEnabled(config.HSMS) {
+	profile := hostBootstrapProfile(config.HSMS)
+	steps := hostBootstrapSteps(profile)
+	if len(steps) == 0 {
 		return
 	}
 
 	c.mu.Lock()
-	if c.cancel == nil || c.transport == nil || c.hostBootstrap != hostBootstrapIdle {
+	if c.cancel == nil || c.transport == nil || c.hostBootstrap.Profile != "" {
 		c.mu.Unlock()
 		return
 	}
-	c.hostBootstrap = hostBootstrapAwaitingS1F14
+	c.hostBootstrap = hostBootstrapState{Profile: profile, StepIndex: 0}
 	c.mu.Unlock()
 
-	if err := c.sendStandaloneMessage(hsms.BuildS1F13(uint16(config.HSMS.SessionID), 0)); err != nil {
-		c.setHostBootstrap(hostBootstrapIdle)
-		log.Printf("start host bootstrap S1F13: %v", err)
+	if err := c.sendHostBootstrapStep(config, steps[0]); err != nil {
+		c.setHostBootstrap(hostBootstrapState{})
+		log.Printf("start host bootstrap %s step 1: %v", profile, err)
 		c.store.SetRuntimeError(normalizeRuntimeError(err))
 	}
 }
@@ -349,30 +341,49 @@ func (c *Controller) advanceHostBootstrap(config model.Snapshot, message hsms.Me
 		return nil
 	}
 
-	switch {
-	case message.Stream == 1 && message.Function == 14:
-		if !c.transitionHostBootstrap(hostBootstrapAwaitingS1F14, hostBootstrapAwaitingS1F18) {
-			return nil
-		}
-		if err := c.sendStandaloneMessage(hsms.BuildS1F17(uint16(config.HSMS.SessionID), 0)); err != nil {
-			c.setHostBootstrap(hostBootstrapIdle)
-			return err
-		}
-	case message.Stream == 1 && message.Function == 18:
-		if !c.transitionHostBootstrap(hostBootstrapAwaitingS1F18, hostBootstrapAwaitingS2F32) {
-			return nil
-		}
-		if err := c.sendStandaloneMessage(hsms.BuildS2F31(uint16(config.HSMS.SessionID), 0, time.Now())); err != nil {
-			c.setHostBootstrap(hostBootstrapIdle)
-			return err
-		}
-	case message.Stream == 2 && message.Function == 32:
-		if c.transitionHostBootstrap(hostBootstrapAwaitingS2F32, hostBootstrapReady) {
-			return nil
-		}
+	c.mu.Lock()
+	state := c.hostBootstrap
+	c.mu.Unlock()
+	if state.Profile == "" {
+		return nil
+	}
+
+	steps := hostBootstrapSteps(state.Profile)
+	if state.StepIndex < 0 || state.StepIndex >= len(steps) {
+		c.setHostBootstrap(hostBootstrapState{})
+		return nil
+	}
+
+	expected := steps[state.StepIndex].Expect
+	if message.Stream != expected.Stream || message.Function != expected.Function {
+		return nil
+	}
+
+	next := state.StepIndex + 1
+	if next >= len(steps) {
+		c.setHostBootstrap(hostBootstrapState{})
+		return nil
+	}
+
+	nextState := hostBootstrapState{Profile: state.Profile, StepIndex: next}
+	if !c.transitionHostBootstrap(state, nextState) {
+		return nil
+	}
+
+	if err := c.sendHostBootstrapStep(config, steps[next]); err != nil {
+		c.setHostBootstrap(hostBootstrapState{})
+		return err
 	}
 
 	return nil
+}
+
+func (c *Controller) sendHostBootstrapStep(config model.Snapshot, step hostBootstrapStep) error {
+	message, err := step.Send(config)
+	if err != nil {
+		return err
+	}
+	return c.sendStandaloneMessage(message)
 }
 
 func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
@@ -388,7 +399,7 @@ func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
 	return nil
 }
 
-func (c *Controller) transitionHostBootstrap(expect hostBootstrapPhase, next hostBootstrapPhase) bool {
+func (c *Controller) transitionHostBootstrap(expect hostBootstrapState, next hostBootstrapState) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -399,14 +410,21 @@ func (c *Controller) transitionHostBootstrap(expect hostBootstrapPhase, next hos
 	return true
 }
 
-func (c *Controller) setHostBootstrap(phase hostBootstrapPhase) {
+func (c *Controller) setHostBootstrap(state hostBootstrapState) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.hostBootstrap = phase
+	c.hostBootstrap = state
 }
 
 func hostBootstrapEnabled(config model.HsmsConfig) bool {
-	return strings.EqualFold(strings.TrimSpace(config.Mode), "active") && config.Handshake.AutoHostStartup
+	return strings.EqualFold(strings.TrimSpace(config.Mode), "active") && model.HostStartupEnabled(config.Handshake)
+}
+
+func hostBootstrapProfile(config model.HsmsConfig) string {
+	if !hostBootstrapEnabled(config) {
+		return model.HostStartupProfileDisabled
+	}
+	return model.NormalizedHostStartupProfile(config.Handshake)
 }
 
 func normalizeRuntimeError(err error) string {

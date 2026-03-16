@@ -1,6 +1,12 @@
 import { Badge, CollapsibleSection, LabeledInput, LabeledSelect, TogglePill } from "./ui";
 import type { DeviceConfig, HsmsConfig } from "../types";
 
+const hostStartupProfileOptions = [
+  { value: "disabled", label: "Disabled" },
+  { value: "stocker", label: "Stocker / Minimal" },
+  { value: "conveyor", label: "Conveyor / Example Log" },
+];
+
 interface HsmsTabProps {
   hsms: HsmsConfig;
   device: DeviceConfig;
@@ -12,6 +18,17 @@ interface HsmsTabProps {
 function toNumber(value: string): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function describeHostStartupProfile(profile: string): string {
+  switch (profile) {
+    case "stocker":
+      return "Current minimal bring-up: S1F13, S1F17, S2F31, plus S6F11 acknowledgements.";
+    case "conveyor":
+      return "Extended conveyor startup from example_conveyor_handshake.log, including report, alarm, and status setup.";
+    default:
+      return "No automated host bring-up runs after HSMS select.";
+  }
 }
 
 export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeDevice }: HsmsTabProps) {
@@ -33,18 +50,26 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
   };
 
   const issues = Object.values(errors).filter(Boolean);
+  const hostStartupEnabled = hsms.handshake.hostStartupProfile !== "disabled";
   const hostStartupWarning =
-    hsms.handshake.autoHostStartup && hsms.mode !== "active"
+    hostStartupEnabled && hsms.mode !== "active"
       ? "Active-mode host startup only runs when the connection mode is active."
       : "";
+  const hostStartupDescription = describeHostStartupProfile(hsms.handshake.hostStartupProfile);
   const summaryTone = issues.length > 0 ? "red" : restartRequired || hostStartupWarning ? "yellow" : "green";
   const summaryLabel =
-    issues.length > 0 ? `${issues.length} validation issue${issues.length === 1 ? "" : "s"}` : restartRequired ? "Restart pending" : "Ready";
+    issues.length > 0
+      ? `${issues.length} validation issue${issues.length === 1 ? "" : "s"}`
+      : hostStartupWarning
+        ? "Startup note"
+        : restartRequired
+          ? "Restart pending"
+          : "Ready";
 
   return (
     <div className="panel-scroll">
       <div className="panel-scroll-content">
-        {issues.length > 0 ? (
+        {issues.length > 0 || hostStartupWarning ? (
           <CollapsibleSection title="Validation Issues" defaultOpen={false} right={<Badge tone={summaryTone}>{summaryLabel}</Badge>}>
             <div className="rule-readiness-list">
               {issues.map((issue) => (
@@ -238,16 +263,25 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               <span className="toggle-copy-title">S2F25 Loopback</span>
             </div>
             <div className="toggle-row">
-              <TogglePill
-                checked={hsms.handshake.autoHostStartup}
-                onToggle={() =>
-                  onChangeHsms({
-                    ...hsms,
-                    handshake: { ...hsms.handshake, autoHostStartup: !hsms.handshake.autoHostStartup },
-                  })
-                }
-              />
-              <span className="toggle-copy-title">Host startup sequence</span>
+              <div style={{ flex: 1 }}>
+                <LabeledSelect
+                  label="Host startup profile"
+                  value={hsms.handshake.hostStartupProfile}
+                  onChange={(value) =>
+                    onChangeHsms({
+                      ...hsms,
+                      handshake: {
+                        ...hsms.handshake,
+                        hostStartupProfile: value,
+                        autoHostStartup: value !== "disabled",
+                      },
+                    })
+                  }
+                  options={hostStartupProfileOptions}
+                  width="100%"
+                />
+                <div className="meta-note">{hostStartupDescription}</div>
+              </div>
               <Badge tone="yellow">Active only</Badge>
             </div>
           </div>

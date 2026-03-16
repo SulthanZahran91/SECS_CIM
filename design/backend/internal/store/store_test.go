@@ -402,6 +402,7 @@ handshake:
   auto_s1f1: false
   auto_s2f25: true
   auto_host_startup: true
+  host_startup_profile: conveyor
 rules:
   - name: yaml rule
     match:
@@ -438,6 +439,9 @@ rules:
 	if !snapshot.HSMS.Handshake.AutoS2F25 || snapshot.HSMS.Handshake.AutoS1F13 || !snapshot.HSMS.Handshake.AutoHostStartup {
 		t.Fatalf("expected handshake config from file, got %#v", snapshot.HSMS.Handshake)
 	}
+	if snapshot.HSMS.Handshake.HostStartupProfile != model.HostStartupProfileConveyor {
+		t.Fatalf("expected explicit conveyor startup profile, got %#v", snapshot.HSMS.Handshake)
+	}
 	if len(snapshot.Rules) != 1 || snapshot.Rules[0].ID != "rule-1" {
 		t.Fatalf("expected file rules to load with generated IDs, got %#v", snapshot.Rules)
 	}
@@ -448,6 +452,47 @@ rules:
 		t.Fatalf("expected file action generic send fields to load, got %#v", action)
 	} else if action.Body != "L:2 <A \"TRANSFER_INITIATED\"> <I 7>" {
 		t.Fatalf("expected file action body to load, got %#v", action.Body)
+	}
+}
+
+func TestNewFromFileMapsLegacyAutoHostStartupToStockerProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-host-startup.yaml")
+	if err := os.WriteFile(path, []byte(`
+hsms:
+  mode: active
+  ip: "127.0.0.1"
+  port: 5000
+  session_id: 1
+  device_id: 0
+  timers:
+    t3: 45
+    t5: 10
+    t6: 5
+    t7: 10
+    t8: 5
+device:
+  name: legacy-host
+  protocol: e88
+  mdln: LEGACY-HOST
+  softrev: 1.0.0
+handshake:
+  auto_s1f13: true
+  auto_s1f1: true
+  auto_s2f25: false
+  auto_host_startup: true
+rules: []
+`), 0o644); err != nil {
+		t.Fatalf("write legacy config file: %v", err)
+	}
+
+	store, err := NewFromFile(path)
+	if err != nil {
+		t.Fatalf("create store from legacy file: %v", err)
+	}
+
+	handshake := store.Snapshot().HSMS.Handshake
+	if !handshake.AutoHostStartup || handshake.HostStartupProfile != model.HostStartupProfileStocker {
+		t.Fatalf("expected legacy auto_host_startup to map to stocker profile, got %#v", handshake)
 	}
 }
 

@@ -42,7 +42,7 @@ interface LabeledInputProps {
 interface LabeledSelectProps {
   label: string;
   value: string;
-  options: string[];
+  options: Array<string | { value: string; label: string }>;
   onChange: (value: string) => void;
   width?: number | string;
   error?: string;
@@ -130,11 +130,14 @@ export function LabeledSelect({
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
+          {options.map((option) => {
+            const normalized = typeof option === "string" ? { value: option, label: option } : option;
+            return (
+              <option key={normalized.value} value={normalized.value}>
+                {normalized.label}
+              </option>
+            );
+          })}
         </select>
       </div>
       {error ? <span className="field-error">{error}</span> : null}

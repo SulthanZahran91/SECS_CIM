@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -77,11 +78,17 @@ type yamlRuleActionVariable struct {
 }
 
 type yamlHandshakeConfig struct {
-	AutoS1F13       bool `yaml:"auto_s1f13"`
-	AutoS1F1        bool `yaml:"auto_s1f1"`
-	AutoS2F25       bool `yaml:"auto_s2f25"`
-	AutoHostStartup bool `yaml:"auto_host_startup"`
+	AutoS1F13          bool   `yaml:"auto_s1f13"`
+	AutoS1F1           bool   `yaml:"auto_s1f1"`
+	AutoS2F25          bool   `yaml:"auto_s2f25"`
+	AutoHostStartup    bool   `yaml:"auto_host_startup"`
+	HostStartupProfile string `yaml:"host_startup_profile"`
 }
+
+var (
+	autoHostStartupKeyPattern    = regexp.MustCompile(`(?m)^\s*auto_host_startup\s*:`)
+	hostStartupProfileKeyPattern = regexp.MustCompile(`(?m)^\s*host_startup_profile\s*:`)
+)
 
 func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, error) {
 	data, err := os.ReadFile(path)
@@ -99,6 +106,13 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 	snapshot := model.CloneSnapshot(base)
 	snapshot.Runtime.ConfigFile = path
 	snapshot.Runtime.LastError = ""
+	hostStartupProfile := model.NormalizedHostStartupProfile(base.HSMS.Handshake)
+	switch {
+	case hostStartupProfileKeyPattern.Match(data):
+		hostStartupProfile = model.NormalizeHostStartupProfile(config.Handshake.HostStartupProfile, config.Handshake.AutoHostStartup)
+	case autoHostStartupKeyPattern.Match(data):
+		hostStartupProfile = model.NormalizeHostStartupProfile("", config.Handshake.AutoHostStartup)
+	}
 	snapshot.HSMS = model.HsmsConfig{
 		Mode:      config.HSMS.Mode,
 		IP:        config.HSMS.IP,
@@ -107,10 +121,11 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 		DeviceID:  config.HSMS.DeviceID,
 		Timers:    config.HSMS.Timers,
 		Handshake: model.HandshakeConfig{
-			AutoS1F13:       config.Handshake.AutoS1F13,
-			AutoS1F1:        config.Handshake.AutoS1F1,
-			AutoS2F25:       config.Handshake.AutoS2F25,
-			AutoHostStartup: config.Handshake.AutoHostStartup,
+			AutoS1F13:          config.Handshake.AutoS1F13,
+			AutoS1F1:           config.Handshake.AutoS1F1,
+			AutoS2F25:          config.Handshake.AutoS2F25,
+			AutoHostStartup:    hostStartupProfile != model.HostStartupProfileDisabled,
+			HostStartupProfile: hostStartupProfile,
 		},
 	}
 	snapshot.Device = config.Device
@@ -199,6 +214,7 @@ func configEquals(left model.Snapshot, right model.Snapshot) bool {
 }
 
 func snapshotConfig(snapshot model.Snapshot) yamlConfig {
+	hostStartupProfile := model.NormalizedHostStartupProfile(snapshot.HSMS.Handshake)
 	rules := make([]yamlRule, 0, len(snapshot.Rules))
 	for _, rule := range snapshot.Rules {
 		enabled := rule.Enabled
@@ -236,10 +252,11 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 		},
 		Device: snapshot.Device,
 		Handshake: yamlHandshakeConfig{
-			AutoS1F13:       snapshot.HSMS.Handshake.AutoS1F13,
-			AutoS1F1:        snapshot.HSMS.Handshake.AutoS1F1,
-			AutoS2F25:       snapshot.HSMS.Handshake.AutoS2F25,
-			AutoHostStartup: snapshot.HSMS.Handshake.AutoHostStartup,
+			AutoS1F13:          snapshot.HSMS.Handshake.AutoS1F13,
+			AutoS1F1:           snapshot.HSMS.Handshake.AutoS1F1,
+			AutoS2F25:          snapshot.HSMS.Handshake.AutoS2F25,
+			AutoHostStartup:    hostStartupProfile != model.HostStartupProfileDisabled,
+			HostStartupProfile: hostStartupProfile,
 		},
 		Rules: rules,
 	}
