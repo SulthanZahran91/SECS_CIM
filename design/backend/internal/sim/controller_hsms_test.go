@@ -701,9 +701,117 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Body:        itemPtr(hsms.List(hsms.U1(5))),
 	})
 
+	pauseReq := readMessage(t, conn)
+	if pauseReq.Stream != 2 || pauseReq.Function != 41 || !pauseReq.WBit || pauseReq.Body == nil {
+		t.Fatalf("expected PAUSE S2F41 request, got %#v", pauseReq)
+	}
+	if got := pauseReq.Body.Compact(); got != `L:2 <A "PAUSE"> L:0` {
+		t.Fatalf("unexpected PAUSE command body: %s", got)
+	}
+	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), pauseReq.SystemBytes, 0))
+
+	pauseInitiated := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000CA02,
+		Body: itemPtr(hsms.List(
+			hsms.U2(0),
+			hsms.U2(57),
+			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
+		)),
+	}
+	writeMessage(t, conn, pauseInitiated)
+	pauseInitiatedAck := readMessage(t, conn)
+	if pauseInitiatedAck.Stream != 6 || pauseInitiatedAck.Function != 12 || pauseInitiatedAck.SystemBytes != pauseInitiated.SystemBytes {
+		t.Fatalf("expected S6F12 ack for pause initiated event, got %#v", pauseInitiatedAck)
+	}
+
+	pauseCompleted := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000CA03,
+		Body: itemPtr(hsms.List(
+			hsms.U2(0),
+			hsms.U2(55),
+			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
+		)),
+	}
+	writeMessage(t, conn, pauseCompleted)
+	pauseCompletedAck := readMessage(t, conn)
+	if pauseCompletedAck.Stream != 6 || pauseCompletedAck.Function != 12 || pauseCompletedAck.SystemBytes != pauseCompleted.SystemBytes {
+		t.Fatalf("expected S6F12 ack for pause completed event, got %#v", pauseCompletedAck)
+	}
+
+	for _, svid := range []uint16{98, 81, 83, 4, 401, 507, 509, 511, 76, 628, 631, 632} {
+		statusReq = readMessage(t, conn)
+		if statusReq.Stream != 1 || statusReq.Function != 3 || !statusReq.WBit || statusReq.Body == nil {
+			t.Fatalf("expected S1F3 status request for SVID %d, got %#v", svid, statusReq)
+		}
+		if got := statusReq.Body.Compact(); got != "L:1 <U2 "+strconv.Itoa(int(svid))+">" {
+			t.Fatalf("unexpected S1F3 body for SVID %d: %s", svid, got)
+		}
+		writeMessage(t, conn, hsms.Message{
+			SessionID:   uint16(hsmsConfig.SessionID),
+			Stream:      1,
+			Function:    4,
+			WBit:        false,
+			SystemBytes: statusReq.SystemBytes,
+			Body:        itemPtr(hsms.List()),
+		})
+	}
+
+	resumeReq := readMessage(t, conn)
+	if resumeReq.Stream != 2 || resumeReq.Function != 41 || !resumeReq.WBit || resumeReq.Body == nil {
+		t.Fatalf("expected RESUME S2F41 request, got %#v", resumeReq)
+	}
+	if got := resumeReq.Body.Compact(); got != `L:2 <A "RESUME"> L:0` {
+		t.Fatalf("unexpected RESUME command body: %s", got)
+	}
+	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), resumeReq.SystemBytes, 0))
+
+	autoComplete := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000CA04,
+		Body: itemPtr(hsms.List(
+			hsms.U2(0),
+			hsms.U2(53),
+			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
+		)),
+	}
+	writeMessage(t, conn, autoComplete)
+	autoCompleteAck := readMessage(t, conn)
+	if autoCompleteAck.Stream != 6 || autoCompleteAck.Function != 12 || autoCompleteAck.SystemBytes != autoComplete.SystemBytes {
+		t.Fatalf("expected S6F12 ack for auto complete event, got %#v", autoCompleteAck)
+	}
+
+	conveyorChange := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x0000CA05,
+		Body: itemPtr(hsms.List(
+			hsms.U2(0),
+			hsms.U2(601),
+			hsms.List(hsms.List(hsms.U2(23), hsms.List(hsms.U2(1)))),
+		)),
+	}
+	writeMessage(t, conn, conveyorChange)
+	conveyorChangeAck := readMessage(t, conn)
+	if conveyorChangeAck.Stream != 6 || conveyorChangeAck.Function != 12 || conveyorChangeAck.SystemBytes != conveyorChange.SystemBytes {
+		t.Fatalf("expected S6F12 ack for conveyor state change event, got %#v", conveyorChangeAck)
+	}
+
 	waitFor(t, time.Second, func() bool {
 		messages := state.Snapshot().Messages
-		return len(messages) >= 24 && messages[0].SF == "S1F13" && messages[len(messages)-1].SF == "S1F4"
+		return len(messages) >= 48 && messages[0].SF == "S1F13" && messages[len(messages)-1].SF == "S6F12"
 	})
 }
 

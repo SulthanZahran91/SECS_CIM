@@ -11,6 +11,7 @@ import (
 type hostBootstrapMatch struct {
 	Stream   byte
 	Function byte
+	CEID     string
 }
 
 type hostBootstrapState struct {
@@ -118,6 +119,19 @@ var conveyorEnabledCEIDs = []uint16{
 	647, 648, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711,
 }
 
+var conveyorStatusSVIDs = []uint16{98, 81, 83, 4, 401, 507, 509, 511, 76, 628, 631, 632}
+
+func (m hostBootstrapMatch) Matches(message hsms.Message) bool {
+	if message.Stream != m.Stream || message.Function != m.Function {
+		return false
+	}
+	if m.CEID == "" {
+		return true
+	}
+	ceid, ok := hsms.ExtractS6F11CEID(message)
+	return ok && ceid == m.CEID
+}
+
 func hostBootstrapSteps(profile string) []hostBootstrapStep {
 	switch profile {
 	case model.HostStartupProfileStocker:
@@ -127,7 +141,7 @@ func hostBootstrapSteps(profile string) []hostBootstrapStep {
 			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32}},
 		}
 	case model.HostStartupProfileConveyor:
-		return []hostBootstrapStep{
+		steps := []hostBootstrapStep{
 			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14}},
 			{Send: sendS1F17, Expect: hostBootstrapMatch{Stream: 1, Function: 18}},
 			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32}},
@@ -139,8 +153,21 @@ func hostBootstrapSteps(profile string) []hostBootstrapStep {
 			{Send: sendConveyorS2F37Enable, Expect: hostBootstrapMatch{Stream: 2, Function: 38}},
 			{Send: sendConveyorS5F3Disable, Expect: hostBootstrapMatch{Stream: 5, Function: 4}},
 			{Send: sendConveyorS5F3Enable, Expect: hostBootstrapMatch{Stream: 5, Function: 4}},
-			{Send: sendConveyorS1F3Status, Expect: hostBootstrapMatch{Stream: 1, Function: 4}},
+			{Send: sendConveyorS1F3Status(6), Expect: hostBootstrapMatch{Stream: 1, Function: 4}},
+			{Send: sendConveyorS2F41Command("PAUSE"), Expect: hostBootstrapMatch{Stream: 2, Function: 42}},
+			{Send: nil, Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "55"}},
 		}
+		for _, svid := range conveyorStatusSVIDs {
+			steps = append(steps, hostBootstrapStep{
+				Send:   sendConveyorS1F3Status(svid),
+				Expect: hostBootstrapMatch{Stream: 1, Function: 4},
+			})
+		}
+		steps = append(steps, hostBootstrapStep{
+			Send:   sendConveyorS2F41Command("RESUME"),
+			Expect: hostBootstrapMatch{Stream: 2, Function: 42},
+		})
+		return steps
 	default:
 		return nil
 	}
@@ -231,9 +258,18 @@ func sendConveyorS5F3Enable(config model.Snapshot) (hsms.Message, error) {
 	return buildStartupMessage(config, 5, 3, true, &body), nil
 }
 
-func sendConveyorS1F3Status(config model.Snapshot) (hsms.Message, error) {
-	body := hsms.List(hsms.U2(6))
-	return buildStartupMessage(config, 1, 3, true, &body), nil
+func sendConveyorS1F3Status(svid uint16) func(model.Snapshot) (hsms.Message, error) {
+	return func(config model.Snapshot) (hsms.Message, error) {
+		body := hsms.List(hsms.U2(svid))
+		return buildStartupMessage(config, 1, 3, true, &body), nil
+	}
+}
+
+func sendConveyorS2F41Command(command string) func(model.Snapshot) (hsms.Message, error) {
+	return func(config model.Snapshot) (hsms.Message, error) {
+		body := hsms.List(hsms.ASCII(command), hsms.List())
+		return buildStartupMessage(config, 2, 41, true, &body), nil
+	}
 }
 
 func buildReportDefinitionItem(definition reportDefinition) hsms.Item {

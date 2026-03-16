@@ -202,9 +202,20 @@ func (c *Controller) handleDataMessage(message hsms.Message) ([]hsms.Message, er
 	if ok {
 		responses = append(responses, response)
 	}
-	if err := c.advanceHostBootstrap(config, message); err != nil {
+	nextBootstrapMessage, err := c.advanceHostBootstrap(config, message)
+	if err != nil {
 		log.Printf("advance host bootstrap after %s: %v", message.Label(), err)
 		c.store.SetRuntimeError(normalizeRuntimeError(err))
+	}
+	if nextBootstrapMessage != nil {
+		if len(responses) == 0 {
+			if err := c.sendStandaloneMessage(*nextBootstrapMessage); err != nil {
+				log.Printf("send host bootstrap after %s: %v", message.Label(), err)
+				c.store.SetRuntimeError(normalizeRuntimeError(err))
+			}
+		} else {
+			c.sendStandaloneMessageDeferred(*nextBootstrapMessage)
+		}
 	}
 	if len(responses) == 0 {
 		return nil, nil
@@ -336,54 +347,66 @@ func (c *Controller) beginHostBootstrap() {
 	}
 }
 
-func (c *Controller) advanceHostBootstrap(config model.Snapshot, message hsms.Message) error {
+func (c *Controller) advanceHostBootstrap(config model.Snapshot, message hsms.Message) (*hsms.Message, error) {
 	if !hostBootstrapEnabled(config.HSMS) {
-		return nil
+		return nil, nil
 	}
 
 	c.mu.Lock()
 	state := c.hostBootstrap
 	c.mu.Unlock()
 	if state.Profile == "" {
-		return nil
+		return nil, nil
 	}
 
 	steps := hostBootstrapSteps(state.Profile)
 	if state.StepIndex < 0 || state.StepIndex >= len(steps) {
 		c.setHostBootstrap(hostBootstrapState{})
-		return nil
+		return nil, nil
 	}
 
 	expected := steps[state.StepIndex].Expect
-	if message.Stream != expected.Stream || message.Function != expected.Function {
-		return nil
+	if !expected.Matches(message) {
+		return nil, nil
 	}
 
 	next := state.StepIndex + 1
 	if next >= len(steps) {
 		c.setHostBootstrap(hostBootstrapState{})
-		return nil
+		return nil, nil
 	}
 
 	nextState := hostBootstrapState{Profile: state.Profile, StepIndex: next}
 	if !c.transitionHostBootstrap(state, nextState) {
-		return nil
+		return nil, nil
 	}
 
-	if err := c.sendHostBootstrapStep(config, steps[next]); err != nil {
+	if steps[next].Send == nil {
+		return nil, nil
+	}
+
+	messageToSend, err := c.buildHostBootstrapStepMessage(config, steps[next])
+	if err != nil {
 		c.setHostBootstrap(hostBootstrapState{})
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &messageToSend, nil
 }
 
 func (c *Controller) sendHostBootstrapStep(config model.Snapshot, step hostBootstrapStep) error {
-	message, err := step.Send(config)
+	message, err := c.buildHostBootstrapStepMessage(config, step)
 	if err != nil {
 		return err
 	}
 	return c.sendStandaloneMessage(message)
+}
+
+func (c *Controller) buildHostBootstrapStepMessage(config model.Snapshot, step hostBootstrapStep) (hsms.Message, error) {
+	if step.Send == nil {
+		return hsms.Message{}, nil
+	}
+	return step.Send(config)
 }
 
 func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
@@ -397,6 +420,16 @@ func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
 
 	c.appendProtocolMessage(time.Now().UTC(), "OUT", message, "", "")
 	return nil
+}
+
+func (c *Controller) sendStandaloneMessageDeferred(message hsms.Message) {
+	go func() {
+		time.Sleep(time.Millisecond)
+		if err := c.sendStandaloneMessage(message); err != nil {
+			log.Printf("send deferred host bootstrap %s: %v", message.Label(), err)
+			c.store.SetRuntimeError(normalizeRuntimeError(err))
+		}
+	}()
 }
 
 func (c *Controller) transitionHostBootstrap(expect hostBootstrapState, next hostBootstrapState) bool {

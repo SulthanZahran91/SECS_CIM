@@ -25,7 +25,7 @@ function describeHostStartupProfile(profile: string): string {
     case "stocker":
       return "Current minimal bring-up: S1F13, S1F17, S2F31, plus S6F11 acknowledgements.";
     case "conveyor":
-      return "Extended conveyor startup from example_conveyor_handshake.log, including report, alarm, and status setup.";
+      return "Extended conveyor startup from example_conveyor_handshake.log, including report setup, pause/resume, alarms, and status polling.";
     default:
       return "No automated host bring-up runs after HSMS select.";
   }

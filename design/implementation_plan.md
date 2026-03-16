@@ -182,7 +182,7 @@ Done:
   - `S6F11` / `S6F12`
 - Host startup is now an explicit profile choice instead of a single toggle:
   - `stocker` keeps the existing minimal bring-up
-  - `conveyor` extends startup with the report, alarm, and status setup taken from `example_conveyor_handshake.log`
+  - `conveyor` extends startup with the report, alarm, pause/resume, and status-poll setup taken from `example_conveyor_handshake.log`
 - Rule-driven `S2F42` replies and scheduled outbound messages are now encoded and sent over the selected HSMS session
 - The SECS-II item codec now supports the hand-authored payload types used by the outbound message editor, including signed integer items and nested list parsing from SML-like text
 - Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
