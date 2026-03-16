@@ -2,7 +2,9 @@ package sim
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strconv"
@@ -868,6 +870,48 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	})
 }
 
+func TestControllerStopClosesActiveConnectionBeforeReturning(t *testing.T) {
+	state := store.New()
+
+	hostListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for active stop test: %v", err)
+	}
+	defer hostListener.Close()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "active"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig.Timers.T5 = 1
+	hsmsConfig.Timers.T6 = 1
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	if _, err := controller.Start(); err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+
+	conn := acceptEventually(t, hostListener)
+	selectReq := readFrame(t, conn)
+	if selectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected active select.req, got %#v", selectReq)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(model.HSMSHeaderSessionID(hsmsConfig), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write select.rsp: %v", err)
+	}
+	waitFor(t, time.Second, func() bool {
+		return state.Snapshot().Runtime.HSMSState == "SELECTED"
+	})
+
+	stopped := controller.Stop()
+	if stopped.Runtime.Listening || stopped.Runtime.HSMSState != "NOT CONNECTED" {
+		t.Fatalf("expected stopped runtime snapshot, got %#v", stopped.Runtime)
+	}
+
+	assertConnClosed(t, conn)
+}
+
 func TestControllerRestartClearsPendingConnectionChanges(t *testing.T) {
 	state := store.New()
 
@@ -1007,6 +1051,33 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 	}
 
 	t.Fatal("condition not met before timeout")
+}
+
+func assertConnClosed(t *testing.T, conn net.Conn) {
+	t.Helper()
+
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	var buffer [1]byte
+	_, err := conn.Read(buffer[:])
+	if err == nil {
+		t.Fatal("expected connection to be closed")
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		t.Fatalf("expected closed connection, got timeout: %v", err)
+	}
+	if errors.Is(err, io.EOF) {
+		return
+	}
+
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "closed network connection") || strings.Contains(lower, "reset by peer") {
+		return
+	}
+
+	t.Fatalf("expected closed connection, got %v", err)
 }
 
 func itemPtr(item hsms.Item) *hsms.Item {

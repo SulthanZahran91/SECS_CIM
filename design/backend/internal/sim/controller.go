@@ -65,6 +65,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 
 	if err := transport.Start(ctx); err != nil {
 		cancel()
+		transport.Shutdown()
 		c.mu.Lock()
 		c.cancel = nil
 		c.transport = nil
@@ -79,6 +80,7 @@ func (c *Controller) Start() (model.Snapshot, error) {
 func (c *Controller) Stop() model.Snapshot {
 	c.mu.Lock()
 	cancel := c.cancel
+	transport := c.transport
 	c.cancel = nil
 	c.transport = nil
 	c.hostBootstrap = hostBootstrapState{}
@@ -86,6 +88,9 @@ func (c *Controller) Stop() model.Snapshot {
 
 	if cancel != nil {
 		cancel()
+	}
+	if transport != nil {
+		transport.Shutdown()
 	}
 
 	return c.store.SetRuntime(false, "NOT CONNECTED")

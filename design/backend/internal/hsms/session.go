@@ -31,6 +31,8 @@ type Manager struct {
 	current         *session
 	nextSystemBytes atomic.Uint32
 	started         atomic.Bool
+	shutdownOnce    sync.Once
+	loopWG          sync.WaitGroup
 }
 
 type session struct {
@@ -56,14 +58,20 @@ func (m *Manager) Start(ctx context.Context) error {
 		return nil
 	}
 
+	m.loopWG.Add(1)
 	go func() {
+		defer m.loopWG.Done()
 		<-ctx.Done()
 		m.shutdown()
 	}()
 
 	if isActiveMode(m.config.Mode) {
 		m.publishState("CONNECTING")
-		go m.activeLoop(ctx)
+		m.loopWG.Add(1)
+		go func() {
+			defer m.loopWG.Done()
+			m.activeLoop(ctx)
+		}()
 		return nil
 	}
 
@@ -78,8 +86,17 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	m.publishState("LISTENING")
-	go m.acceptLoop(ctx, listener)
+	m.loopWG.Add(1)
+	go func() {
+		defer m.loopWG.Done()
+		m.acceptLoop(ctx, listener)
+	}()
 	return nil
+}
+
+func (m *Manager) Shutdown() {
+	m.shutdown()
+	m.loopWG.Wait()
 }
 
 func (m *Manager) Send(message Message) error {
@@ -122,10 +139,20 @@ func (m *Manager) acceptLoop(ctx context.Context, listener net.Listener) {
 
 		traceTCPEvent("accepted", conn)
 		activeSession := newSession(conn)
-		m.setCurrentSession(activeSession)
+		if !m.installCurrentSession(activeSession, ctx) {
+			activeSession.close()
+			if ctx.Err() != nil || !m.started.Load() {
+				return
+			}
+			continue
+		}
 		m.publishState("CONNECTED")
 
-		go m.runSession(ctx, activeSession, false)
+		m.loopWG.Add(1)
+		go func() {
+			defer m.loopWG.Done()
+			m.runSession(ctx, activeSession, false)
+		}()
 	}
 }
 
@@ -149,9 +176,23 @@ func (m *Manager) activeLoop(ctx context.Context) {
 			continue
 		}
 
+		if ctx.Err() != nil || !m.started.Load() {
+			_ = conn.Close()
+			return
+		}
+
 		traceTCPEvent("connected", conn)
 		activeSession := newSession(conn)
-		m.setCurrentSession(activeSession)
+		if !m.installCurrentSession(activeSession, ctx) {
+			activeSession.close()
+			if ctx.Err() != nil || !m.started.Load() {
+				return
+			}
+			if !sleepContext(ctx, timerDuration(m.config.Timers.T5, time.Second)) {
+				return
+			}
+			continue
+		}
 		m.publishState("CONNECTED")
 
 		if err := activeSession.send(NewControlFrame(model.HSMSHeaderSessionID(m.config), m.nextSystemByte(), STypeSelectReq, 0)); err != nil {
@@ -297,22 +338,25 @@ func (m *Manager) sendOnSession(session *session, message Message) error {
 }
 
 func (m *Manager) shutdown() {
-	m.mu.Lock()
-	listener := m.listener
-	m.listener = nil
-	current := m.current
-	m.current = nil
-	m.mu.Unlock()
+	m.shutdownOnce.Do(func() {
+		m.started.Store(false)
 
-	if listener != nil {
-		_ = listener.Close()
-	}
-	if current != nil {
-		current.close()
-	}
+		m.mu.Lock()
+		listener := m.listener
+		m.listener = nil
+		current := m.current
+		m.current = nil
+		m.mu.Unlock()
 
-	m.publishState("NOT CONNECTED")
-	m.started.Store(false)
+		if listener != nil {
+			_ = listener.Close()
+		}
+		if current != nil {
+			current.close()
+		}
+
+		m.publishState("NOT CONNECTED")
+	})
 }
 
 func (m *Manager) currentSession() *session {
@@ -321,10 +365,16 @@ func (m *Manager) currentSession() *session {
 	return m.current
 }
 
-func (m *Manager) setCurrentSession(session *session) {
+func (m *Manager) installCurrentSession(session *session, ctx context.Context) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if session == nil || ctx.Err() != nil || !m.started.Load() || m.current != nil {
+		return false
+	}
+
 	m.current = session
+	return true
 }
 
 func (m *Manager) clearCurrentSession(session *session) {

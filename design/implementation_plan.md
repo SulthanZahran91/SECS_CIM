@@ -1,6 +1,6 @@
 # SECSIM Design Implementation Plan
 
-Last updated: 2026-03-16
+Last updated: 2026-03-17
 
 ## Purpose
 
@@ -22,6 +22,7 @@ Current reality:
 - Locally generated HSMS control/data frames now use the configured `Device ID` in header bytes 4-5, and transport trace logs now print that header ID on `Select.req`/`Select.rsp` for interoperability debugging.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
+- HSMS runtime shutdown is now synchronous, so stop/start cycles wait for the old transport to release its socket before a new active dialer starts, which avoids overlapping first-connection attempts during restarts.
 - Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 - Rule-driven outbound actions can now declare generic `SxFy` messages with hand-authored SECS item bodies (`L`, `A`, signed/unsigned integers, `B`, `BOOLEAN`) across the UI, YAML config, runtime logging, and outbound HSMS encoding.
@@ -147,6 +148,7 @@ Done:
 - The runtime now applies configured address, port, session ID, and basic T5/T6/T7/T8 timer behavior
 - `T8` enforcement now applies to inter-byte stalls within a frame instead of idle time between frames, which keeps selected sessions up against quieter hosts
 - The backend now emits trace logs for TCP session lifecycle and HSMS control frames so external host handshake issues can be diagnosed from runtime logs
+- Runtime stop now waits for the HSMS transport goroutines and socket closure to finish before returning, which prevents overlapping active sessions on immediate restart
 - Active mode now has an optional host-startup path that sends `S1F13`, advances through `S1F17` and `S2F31`, and acknowledges inbound `S6F11` with `S6F12`
 
 Remaining:
