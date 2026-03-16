@@ -314,6 +314,7 @@ describe("App", () => {
     expect(mockedApi.updateRule).toHaveBeenCalledWith(
       expect.objectContaining({
         match: { stream: 6, function: 11, rcmd: "" },
+        conditions: [{ field: "CEID", value: "READY" }],
         reply: { stream: 6, function: 12, ack: 0 },
         actions: [
           expect.objectContaining({

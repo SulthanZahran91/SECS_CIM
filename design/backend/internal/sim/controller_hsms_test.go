@@ -137,6 +137,30 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	}
 }
 
+func TestInboundMessageFromHSMSSetsS6F11CEIDField(t *testing.T) {
+	body := hsms.List(
+		hsms.U2(0),
+		hsms.U2(158),
+		hsms.List(),
+	)
+
+	inbound := inboundMessageFromHSMS(hsms.Message{
+		SessionID:   1,
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: 0x01020304,
+		Body:        &body,
+	}, time.Date(2026, time.March, 16, 23, 11, 56, 980000000, time.UTC))
+
+	if inbound.Fields == nil {
+		t.Fatal("expected inbound S6F11 fields to be populated")
+	}
+	if got := inbound.Fields["CEID"]; got != "158" {
+		t.Fatalf("expected CEID field 158, got %q", got)
+	}
+}
+
 func TestControllerPassiveHSMSSessionHandlesControlMessages(t *testing.T) {
 	traceOutput := captureLogs(t)
 

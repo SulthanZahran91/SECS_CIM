@@ -211,6 +211,7 @@ export default function App() {
           ...newRule,
           name: template.name,
           match: template.match,
+          conditions: template.conditions,
           reply: template.reply,
           actions: template.actions.map((action) => ({
             ...action,

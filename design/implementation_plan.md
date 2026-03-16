@@ -17,6 +17,7 @@ Current reality:
 - The rule and HSMS editors now provide starter presets, inline validation, and clearer save-vs-restart guidance during authoring.
 - The rule editor now also renders a compact execution preview so inbound triggers, replies, delayed sends, and state mutations read as one causal flow.
 - The Rules tab log importer now also converts follow-up equipment `RECV` exchanges into outbound `send` actions, so pasted equipment logs can capture trigger/reply flows plus subsequent host-initiated messages.
+- The Rules tab log importer now preserves repeated `S6F11` event reports as separate rules by importing `CEID` conditions, and live inbound `S6F11` traffic now exposes `CEID` for runtime rule matching.
 - Active-mode HSMS dialing now normalizes wildcard bind addresses (`0.0.0.0`, `::`) to loopback for local simulator-to-equipment testing, and the UI flags wildcard addresses as invalid active targets before runtime start.
 - Locally generated HSMS control/data frames now use the configured `Device ID` in header bytes 4-5, and transport trace logs now print that header ID on `Select.req`/`Select.rsp` for interoperability debugging.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
@@ -219,6 +220,7 @@ Done:
 - The authoring flows now include rule starter presets, rule readiness feedback, inline HSMS/device validation, and explicit save-versus-restart guidance for connection edits
 - The rule editor now includes an execution preview timeline that summarizes trigger, immediate reply, delayed outbound messages, and runtime mutations as the rule is edited
 - The Rules tab log importer now carries follow-up host sends from pasted equipment logs into imported rule actions instead of dropping everything after the immediate reply
+- The Rules tab log importer now adds `CEID` conditions for repeated `S6F11` event reports so multiple event-report exchanges from one pasted snippet remain separately importable
 - The HSMS editor now warns when active mode is pointed at a wildcard bind address, and the runtime normalizes wildcard local-test targets to loopback instead of attempting to dial `0.0.0.0`
 - The HSMS editor now labels `Device ID` as the wire-header value, and transport traces now expose the 16-bit HSMS header ID so select-phase mismatches can be diagnosed from logs
 

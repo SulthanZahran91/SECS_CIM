@@ -138,9 +138,11 @@ describe("RulesTab", () => {
     const templates = parseLogRoutine(log);
     expect(templates).toHaveLength(2);
     expect(templates[0].match).toEqual({ stream: 6, function: 11, rcmd: "" });
+    expect(templates[0].conditions).toEqual([]);
     expect(templates[0].reply).toEqual({ stream: 6, function: 12, ack: 0 });
     expect(templates[0].actions).toEqual([]);
     expect(templates[1].match).toEqual({ stream: 1, function: 13, rcmd: "" });
+    expect(templates[1].conditions).toEqual([]);
     expect(templates[1].reply).toEqual({ stream: 1, function: 14, ack: 0 });
     expect(templates[1].actions).toEqual([]);
   });
@@ -238,6 +240,7 @@ describe("RulesTab", () => {
 
     expect(templates).toHaveLength(1);
     expect(templates[0].match).toEqual({ stream: 6, function: 11, rcmd: "" });
+    expect(templates[0].conditions).toEqual([{ field: "CEID", value: "158" }]);
     expect(templates[0].reply).toEqual({ stream: 6, function: 12, ack: 0 });
     expect(templates[0].actions).toEqual([
       {
@@ -248,6 +251,81 @@ describe("RulesTab", () => {
         wbit: true,
         body:
           'L:4 <U4 0> <A ""> <A "TRANSFER"> L:4 L:2 <A "COMMANDINFO"> L:2 L:2 <A "COMMANDID"> <A "11991"> L:2 <A "PRIORITY"> <U2 50> L:2 <A "TRANSFERINFO"> L:3 L:2 <A "CARRIERID"> <A "BBENFB2816"> L:2 <A "SOURCE"> <A "B1ACNV13201-201"> L:2 <A "DEST"> <A "B1ACNV13201-999"> L:2 <A "CARRIERATTRIBUTE"> L:2 L:2 <A "EMPTYSTATUS"> <U2 1> L:2 <A "MATERIALCODE"> <A ""> L:2 <A "CHILDCARRIERINFO"> L:0',
+      },
+    ]);
+  });
+
+  it("parseLogRoutine keeps repeated S6F11 events separate by CEID", () => {
+    const log = [
+      "@2026/03/16 23:11:56.762^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:11:56.762 S6F11 W, S6F11 - Event Report - CEID 643. Carrier ID Read Report [SystemByte = 406137]",
+      " <L,3 [L0]",
+      "   <U2,1 0 [DataID]>",
+      "   <U2,1 643 [CEID]>",
+      "   <L,0 [L1]>",
+      " >.",
+      " ",
+      "@2026/03/16 23:11:56.762^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:11:56.762 S6F12  S6F12 - Event Report Acknowledge (ERA) [SystemByte = 406137]",
+      " <B,1 0 [ACKC6]>.",
+      " ",
+      "@2026/03/16 23:11:56.933^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:11:56.933 S6F11 W, S6F11 - Event Report - CEID 251. Carrier ID Read Done [SystemByte = 406138]",
+      " <L,3 [L0]",
+      "   <U2,1 0 [DataID]>",
+      "   <U2,1 251 [CEID]>",
+      "   <L,0 [L1]>",
+      " >.",
+      " ",
+      "@2026/03/16 23:11:56.933^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:11:56.933 S6F12  S6F12 - Event Report Acknowledge (ERA) [SystemByte = 406138]",
+      " <B,1 0 [ACKC6]>.",
+      " ",
+      "@2026/03/16 23:11:56.980^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:11:56.980 S6F11 W, S6F11 - Event Report - CEID 158. Carrier WaitIn_RptID14(Origin) [SystemByte = 406139]",
+      " <L,3 [L0]",
+      "   <U2,1 0 [DataID]>",
+      "   <U2,1 158 [CEID]>",
+      "   <L,0 [Ln]>",
+      " >.",
+      " ",
+      "@2026/03/16 23:11:56.980^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:11:56.980 S6F12  S6F12 - Event Report Acknowledge (ERA) [SystemByte = 406139]",
+      " <B,1 0 [ACKC6]>.",
+      " ",
+      "@2026/03/16 23:11:57.027^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:11:57.027 S2F49 W, S2F49 - Enhanced Remote Command (ERC) [SystemByte = 791234]",
+      " <L,4 []",
+      "   <U4,1 0 [DATAID]>",
+      "   <A,0  [OBJSPEC]>",
+      "   <A,8 TRANSFER [RCMD]>",
+      "   <L,0 [CPList]>",
+      " >.",
+      " ",
+      "@2026/03/16 23:11:57.027^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:11:57.027 S2F50  S2F50 - Enhanced Remote Command Acknowledge (ERCA) [SystemByte = 791234]",
+      " <L,2 [L0]",
+      "   <B,1 4 [HCACK]>",
+      "   <L,0 [L2]>",
+      " >.",
+    ].join("\n");
+
+    const templates = parseLogRoutine(log);
+
+    expect(templates).toHaveLength(3);
+    expect(templates.map((template) => template.conditions)).toEqual([
+      [{ field: "CEID", value: "643" }],
+      [{ field: "CEID", value: "251" }],
+      [{ field: "CEID", value: "158" }],
+    ]);
+    expect(templates[2].actions).toEqual([
+      {
+        delayMs: 47,
+        type: "send",
+        stream: 2,
+        function: 49,
+        wbit: true,
+        body: 'L:4 <U4 0> <A ""> <A "TRANSFER"> L:0',
       },
     ]);
   });
@@ -292,6 +370,7 @@ describe("RulesTab", () => {
     });
 
     expect(screen.getByRole("button", { name: "Import 1 Rule" })).toBeInTheDocument();
+    expect(screen.getByText("CEID=READY")).toBeInTheDocument();
     expect(screen.getByText("+ S2F49 W")).toBeInTheDocument();
   });
 

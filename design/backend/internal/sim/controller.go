@@ -295,6 +295,12 @@ func inboundMessageFromHSMS(message hsms.Message, timestamp time.Time) store.Inb
 		inbound.RCMD = rcmd
 		inbound.Fields = fields
 	}
+	if ceid, ok := hsms.ExtractS6F11CEID(message); ok && ceid != "" {
+		if inbound.Fields == nil {
+			inbound.Fields = map[string]string{}
+		}
+		inbound.Fields["CEID"] = ceid
+	}
 
 	return inbound
 }

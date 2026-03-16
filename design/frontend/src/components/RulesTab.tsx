@@ -7,6 +7,7 @@ type ImportedRuleAction = Omit<RuleAction, "id">;
 export interface RuleTemplate {
   name: string;
   match: Rule["match"];
+  conditions: RuleCondition[];
   reply: Rule["reply"];
   actions: ImportedRuleAction[];
 }
@@ -115,6 +116,7 @@ interface ParsedBlock {
   timestampMs: number | null;
   label: string;
   rcmd: string;
+  ceid: string;
   body: string;
 }
 
@@ -141,6 +143,7 @@ function parseBlocks(text: string): ParsedBlock[] {
     const systemByte = sbyteMatch ? Number.parseInt(sbyteMatch[1], 10) : -1;
     const timestampMs = parseTimestampMs(block);
     const body = extractBlockBody(block);
+    const ceid = stream === 6 && fn === 11 ? extractLoggedCEID(block, body) : "";
 
     let rcmd = "";
     if (stream === 2 && (fn === 41 || fn === 49)) {
@@ -148,7 +151,7 @@ function parseBlocks(text: string): ParsedBlock[] {
       if (rcmdMatch) rcmd = rcmdMatch[1];
     }
 
-    result.push({ direction, stream, fn, wbit, systemByte, timestampMs, label, rcmd, body });
+    result.push({ direction, stream, fn, wbit, systemByte, timestampMs, label, rcmd, ceid, body });
   }
 
   return result;
@@ -178,6 +181,16 @@ function extractBlockBody(block: string): string {
     return "";
   }
   return lines.slice(transactionIndex + 1).join("\n").trim();
+}
+
+function extractLoggedCEID(block: string, body: string): string {
+  const bodyMatch = body.match(/<[^,>]+,\d+\s+(.*?)\s+\[CEID\]>/i);
+  if (bodyMatch) {
+    return bodyMatch[1].trim();
+  }
+
+  const headerMatch = block.match(/\bCEID\s+([^\s.\]]+)/i);
+  return headerMatch ? headerMatch[1].trim() : "";
 }
 
 interface LoggedBodyToken {
@@ -366,6 +379,14 @@ function buildImportedAction(triggerBlock: ParsedBlock, outboundBlock: ParsedBlo
   };
 }
 
+function buildImportedConditions(block: ParsedBlock): RuleCondition[] {
+  if (block.ceid) {
+    return [{ field: "CEID", value: block.ceid }];
+  }
+
+  return [];
+}
+
 export function parseLogRoutine(text: string): RuleTemplate[] {
   const blocks = parseBlocks(text);
   const templates: RuleTemplate[] = [];
@@ -383,7 +404,8 @@ export function parseLogRoutine(text: string): RuleTemplate[] {
     if (replyIndex === -1) continue;
     const replyBlock = blocks[replyIndex];
 
-    const key = `${block.stream}/${block.fn}/${block.rcmd}`;
+    const conditions = buildImportedConditions(block);
+    const key = `${block.stream}/${block.fn}/${block.rcmd}/${block.ceid}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -399,6 +421,7 @@ export function parseLogRoutine(text: string): RuleTemplate[] {
     templates.push({
       name: block.label.toLowerCase(),
       match: { stream: block.stream, function: block.fn, rcmd: block.rcmd },
+      conditions,
       reply: { stream: replyBlock.stream, function: replyBlock.fn, ack: 0 },
       actions,
     });
@@ -495,6 +518,11 @@ function compactBody(body?: string): string | undefined {
   return compact.length > 84 ? `${compact.slice(0, 81)}...` : compact;
 }
 
+function templateKey(template: RuleTemplate): string {
+  const conditionKey = template.conditions.map((condition) => `${condition.field}=${condition.value}`).join("|");
+  return `${template.match.stream}/${template.match.function}/${template.match.rcmd}/${conditionKey}`;
+}
+
 function previewTone(kind: PreviewStepKind): "green" | "yellow" | "accent" | "neutral" {
   switch (kind) {
     case "trigger":
@@ -576,9 +604,14 @@ export function RulesTab({
             <>
               <div className="log-import-rule-list">
                 {logTemplates.map((t) => (
-                  <div className="log-import-rule-row" key={`${t.match.stream}/${t.match.function}/${t.match.rcmd}`}>
+                  <div className="log-import-rule-row" key={templateKey(t)}>
                     <span className="mono">S{t.match.stream}F{t.match.function}</span>
                     {t.match.rcmd ? <Badge tone="yellow">{t.match.rcmd}</Badge> : null}
+                    {t.conditions.map((condition) => (
+                      <Badge tone="accent" key={`${condition.field}/${condition.value}`}>
+                        {condition.field}={condition.value}
+                      </Badge>
+                    ))}
                     <span className="log-import-arrow">→</span>
                     <span className="mono">S{t.reply.stream}F{t.reply.function}</span>
                     {t.actions.map((action, index) => (
