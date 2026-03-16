@@ -263,4 +263,69 @@ describe("App", () => {
 
     expect(screen.getByText("Commit or discard the current config edits")).toBeInTheDocument();
   });
+
+  it("imports parsed follow-up sends as rule actions", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByText("2 rules");
+    await user.click(screen.getByText("Import from Log"));
+
+    const log = [
+      "@2026/03/16 23:02:41.642^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:02:41.642 S6F11 W, S6F11 - Event Report [SystemByte = 406000]",
+      " <L,1 [L0]",
+      '   <A,5 READY [CEID]>',
+      " >.",
+      " ",
+      "@2026/03/16 23:02:41.642^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:02:41.642 S6F12  S6F12 - Event Report Acknowledge (ERA) [SystemByte = 406000]",
+      " <B,1 0 [ACKC6]>.",
+      " ",
+      "@2026/03/16 23:02:42.033^INFO^SECS_II^RECV",
+      "TransactionTime : 2026/03/16 23:02:42.033 S2F49 W, S2F49 - Enhanced Remote Command (ERC) [SystemByte = 791133]",
+      " <L,4 []",
+      "   <U4,1 0 [DATAID]>",
+      "   <A,0  [OBJSPEC]>",
+      "   <A,8 TRANSFER [RCMD]>",
+      "   <L,0 [CPList]>",
+      " >.",
+      " ",
+      "@2026/03/16 23:02:42.033^INFO^SECS_II^SEND",
+      "TransactionTime : 2026/03/16 23:02:42.033 S2F50  S2F50 - Enhanced Remote Command Acknowledge (ERCA) [SystemByte = 791133]",
+      " <L,2 [L0]",
+      "   <B,1 4 [HCACK]>",
+      "   <L,0 [L2]>",
+      " >.",
+    ].join("\n");
+
+    fireEvent.change(screen.getByLabelText("Paste log snippet"), {
+      target: { value: log },
+    });
+
+    await user.click(screen.getByRole("button", { name: "Import 1 Rule" }));
+
+    await waitFor(() => {
+      expect(mockedApi.createRule).toHaveBeenCalledTimes(1);
+      expect(mockedApi.updateRule).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedApi.updateRule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        match: { stream: 6, function: 11, rcmd: "" },
+        reply: { stream: 6, function: 12, ack: 0 },
+        actions: [
+          expect.objectContaining({
+            delayMs: 391,
+            type: "send",
+            stream: 2,
+            function: 49,
+            wbit: true,
+            body: 'L:4 <U4 0> <A ""> <A "TRANSFER"> L:0',
+          }),
+        ],
+      }),
+    );
+  });
 });

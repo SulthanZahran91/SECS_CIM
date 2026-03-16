@@ -212,6 +212,10 @@ export default function App() {
           name: template.name,
           match: template.match,
           reply: template.reply,
+          actions: template.actions.map((action) => ({
+            ...action,
+            id: crypto.randomUUID(),
+          })),
           enabled: true,
         });
       }

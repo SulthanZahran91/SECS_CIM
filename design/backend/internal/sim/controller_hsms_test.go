@@ -294,6 +294,52 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 	assertLogContains(t, traceOutput, "HSMS control IN Select.rsp")
 }
 
+func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hostListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for wildcard dial normalization test: %v", err)
+	}
+	defer hostListener.Close()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "active"
+	hsmsConfig.IP = "0.0.0.0"
+	hsmsConfig.Port = hostListener.Addr().(*net.TCPAddr).Port
+	hsmsConfig.Timers.T5 = 1
+	hsmsConfig.Timers.T6 = 1
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	started, err := controller.Start()
+	if err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	if !started.Runtime.Listening || started.Runtime.HSMSState != "CONNECTING" {
+		t.Fatalf("expected active controller to start CONNECTING, got %#v", started.Runtime)
+	}
+
+	conn := acceptEventually(t, hostListener)
+	defer conn.Close()
+
+	selectReq := readFrame(t, conn)
+	if selectReq.SType != hsms.STypeSelectReq {
+		t.Fatalf("expected active select.req, got %#v", selectReq)
+	}
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), selectReq.SystemBytes, hsms.STypeSelectRsp, hsms.SelectStatusSuccess)); err != nil {
+		t.Fatalf("write select.rsp: %v", err)
+	}
+
+	waitFor(t, time.Second, func() bool {
+		snapshot := state.Snapshot()
+		return snapshot.Runtime.HSMSState == "SELECTED" && snapshot.Runtime.LastError == ""
+	})
+}
+
 func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
 	state := store.New()
 	state.ClearLog()

@@ -31,10 +31,19 @@ function describeHostStartupProfile(profile: string): string {
   }
 }
 
+function isWildcardBindAddress(value: string): boolean {
+  const normalized = value.trim();
+  return normalized === "0.0.0.0" || normalized === "::" || normalized === "[::]";
+}
+
 export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeDevice }: HsmsTabProps) {
   const errors = {
     mode: hsms.mode === "passive" || hsms.mode === "active" ? "" : "Choose passive or active.",
-    ip: hsms.ip.trim() ? "" : "Address is required.",
+    ip: !hsms.ip.trim()
+      ? "Address is required."
+      : hsms.mode === "active" && isWildcardBindAddress(hsms.ip)
+        ? "Active mode must target a concrete host address. Use 127.0.0.1 for a local passive equipment."
+        : "",
     port: validateRange(hsms.port, 1, 65535, "Use a TCP port between 1 and 65535."),
     sessionId: validateRange(hsms.sessionId, 0, 65535, "Use a 16-bit session ID."),
     deviceId: validateRange(hsms.deviceId, 0, 65535, "Use a 16-bit device ID."),

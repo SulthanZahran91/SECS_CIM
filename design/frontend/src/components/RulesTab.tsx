@@ -2,10 +2,13 @@ import { useState } from "react";
 import { ActionButton, Badge, CollapsibleSection, LabeledInput, LabeledSelect, SectionHeader, TogglePill } from "./ui";
 import type { Rule, RuleAction, RuleCondition } from "../types";
 
+type ImportedRuleAction = Omit<RuleAction, "id">;
+
 export interface RuleTemplate {
   name: string;
   match: Rule["match"];
   reply: Rule["reply"];
+  actions: ImportedRuleAction[];
 }
 
 interface RulesTabProps {
@@ -42,7 +45,7 @@ function sortActions(actions: RuleAction[]): RuleAction[] {
   return [...actions].sort((left, right) => left.delayMs - right.delayMs || left.id.localeCompare(right.id));
 }
 
-function sendSummary(action: RuleAction): string {
+function sendSummary(action: Pick<RuleAction, "stream" | "function" | "wbit">): string {
   const stream = action.stream ?? 0;
   const fn = action.function ?? 0;
   return `S${stream}F${fn}${action.wbit ? " W" : ""}`;
@@ -109,8 +112,10 @@ interface ParsedBlock {
   fn: number;
   wbit: boolean;
   systemByte: number;
+  timestampMs: number | null;
   label: string;
   rcmd: string;
+  body: string;
 }
 
 function parseBlocks(text: string): ParsedBlock[] {
@@ -134,17 +139,231 @@ function parseBlocks(text: string): ParsedBlock[] {
 
     const sbyteMatch = block.match(/\[SystemByte = (\d+)\]/);
     const systemByte = sbyteMatch ? Number.parseInt(sbyteMatch[1], 10) : -1;
+    const timestampMs = parseTimestampMs(block);
+    const body = extractBlockBody(block);
 
     let rcmd = "";
-    if (stream === 2 && fn === 41) {
+    if (stream === 2 && (fn === 41 || fn === 49)) {
       const rcmdMatch = block.match(/<A,\d+\s+(\S+)\s*\[/);
       if (rcmdMatch) rcmd = rcmdMatch[1];
     }
 
-    result.push({ direction, stream, fn, wbit, systemByte, label, rcmd });
+    result.push({ direction, stream, fn, wbit, systemByte, timestampMs, label, rcmd, body });
   }
 
   return result;
+}
+
+function parseTimestampMs(text: string): number | null {
+  const match = text.match(/(?:TransactionTime\s*:|@)\s*(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d{3})/);
+  if (!match) {
+    return null;
+  }
+
+  return Date.UTC(
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10) - 1,
+    Number.parseInt(match[3], 10),
+    Number.parseInt(match[4], 10),
+    Number.parseInt(match[5], 10),
+    Number.parseInt(match[6], 10),
+    Number.parseInt(match[7], 10),
+  );
+}
+
+function extractBlockBody(block: string): string {
+  const lines = block.split(/\r?\n/);
+  const transactionIndex = lines.findIndex((line) => line.includes("TransactionTime"));
+  if (transactionIndex === -1) {
+    return "";
+  }
+  return lines.slice(transactionIndex + 1).join("\n").trim();
+}
+
+interface LoggedBodyToken {
+  type: string;
+  length: number;
+  value: string;
+}
+
+interface LoggedListState {
+  count: number;
+  children: string[];
+}
+
+function parseLoggedBody(body: string): string {
+  const lines = body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return "";
+  }
+
+  const stack: LoggedListState[] = [];
+  let root = "";
+
+  function attach(item: string) {
+    if (stack.length === 0) {
+      root = item;
+      return;
+    }
+    stack[stack.length - 1].children.push(item);
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\.\s*$/, "").trim();
+    if (!line) {
+      continue;
+    }
+    if (line === ">") {
+      const completed = stack.pop();
+      if (!completed) {
+        continue;
+      }
+      attach(compactLoggedList(completed));
+      continue;
+    }
+    if (!line.startsWith("<")) {
+      continue;
+    }
+
+    const token = parseLoggedToken(line);
+    if (!token) {
+      continue;
+    }
+
+    if (token.type === "L") {
+      if (token.length === 0) {
+        attach("L:0");
+        continue;
+      }
+      stack.push({ count: token.length, children: [] });
+      continue;
+    }
+
+    const scalar = parseLoggedScalar(token);
+    if (scalar) {
+      attach(scalar);
+    }
+  }
+
+  while (stack.length > 0) {
+    attach(compactLoggedList(stack.pop()!));
+  }
+
+  return root;
+}
+
+function compactLoggedList(list: LoggedListState): string {
+  return list.children.length > 0 ? `L:${list.count} ${list.children.join(" ")}` : `L:${list.count}`;
+}
+
+function parseLoggedToken(line: string): LoggedBodyToken | null {
+  const inner = line.endsWith(">") ? line.slice(1, -1).trim() : line.slice(1).trim();
+  const commaIndex = inner.indexOf(",");
+  if (commaIndex === -1) {
+    return null;
+  }
+
+  const type = inner.slice(0, commaIndex).trim().toUpperCase();
+  let cursor = commaIndex + 1;
+  while (cursor < inner.length && /\s/.test(inner[cursor])) {
+    cursor += 1;
+  }
+
+  let lengthText = "";
+  while (cursor < inner.length && /\d/.test(inner[cursor])) {
+    lengthText += inner[cursor];
+    cursor += 1;
+  }
+  if (!lengthText) {
+    return null;
+  }
+
+  const remainder = inner.slice(cursor).trim();
+  let value = remainder;
+  if (value.startsWith("[") && value.endsWith("]")) {
+    value = "";
+  } else if (value.endsWith("]")) {
+    const labelIndex = value.lastIndexOf(" [");
+    if (labelIndex !== -1) {
+      value = value.slice(0, labelIndex).trim();
+    }
+  }
+  return {
+    type,
+    length: Number.parseInt(lengthText, 10),
+    value,
+  };
+}
+
+function parseLoggedScalar(token: LoggedBodyToken): string | null {
+  const type = token.type === "U" ? "U4" : token.type === "I" ? "I4" : token.type;
+
+  switch (type) {
+    case "A":
+      return `<A ${JSON.stringify(token.value)}>`;
+    case "B":
+      if (!token.value) {
+        return "<B>";
+      }
+      return `<B ${token.value.split(/\s+/).map(formatBinaryToken).join(" ")}>`;
+    case "BOOLEAN": {
+      const normalized = token.value.toUpperCase();
+      if (normalized === "TRUE" || normalized === "T" || normalized === "1") {
+        return "<BOOLEAN TRUE>";
+      }
+      if (normalized === "FALSE" || normalized === "F" || normalized === "0") {
+        return "<BOOLEAN FALSE>";
+      }
+      return null;
+    }
+    case "U1":
+    case "U2":
+    case "U4":
+    case "I1":
+    case "I2":
+    case "I4":
+      return token.value ? `<${type} ${token.value}>` : null;
+    default:
+      return null;
+  }
+}
+
+function formatBinaryToken(raw: string): string {
+  const value = raw.trim();
+  if (!value) {
+    return "0x00";
+  }
+  if (/^0x/i.test(value)) {
+    return `0x${value.slice(2).toUpperCase().padStart(2, "0")}`;
+  }
+  if (/[A-Fa-f]/.test(value)) {
+    return `0x${value.toUpperCase().padStart(2, "0")}`;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+  return `0x${parsed.toString(16).toUpperCase().padStart(2, "0")}`;
+}
+
+function buildImportedAction(triggerBlock: ParsedBlock, outboundBlock: ParsedBlock): ImportedRuleAction {
+  const body = parseLoggedBody(outboundBlock.body);
+
+  return {
+    delayMs:
+      triggerBlock.timestampMs !== null && outboundBlock.timestampMs !== null
+        ? Math.max(0, outboundBlock.timestampMs - triggerBlock.timestampMs)
+        : 0,
+    type: "send",
+    stream: outboundBlock.stream,
+    function: outboundBlock.fn,
+    wbit: outboundBlock.wbit,
+    body: body || undefined,
+  };
 }
 
 export function parseLogRoutine(text: string): RuleTemplate[] {
@@ -152,22 +371,36 @@ export function parseLogRoutine(text: string): RuleTemplate[] {
   const templates: RuleTemplate[] = [];
   const seen = new Set<string>();
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
     // Log is equipment-perspective. Equipment SEND W = simulator (host) receives and must reply.
     if (block.direction !== "SEND" || !block.wbit) continue;
 
     // Find the equipment RECV with matching SystemByte (that's the reply the host sent back).
-    const replyBlock = blocks.find((b) => b.direction === "RECV" && b.systemByte === block.systemByte);
-    if (!replyBlock) continue;
+    const replyIndex = blocks.findIndex((candidate, candidateIndex) => {
+      return candidateIndex > index && candidate.direction === "RECV" && candidate.systemByte === block.systemByte;
+    });
+    if (replyIndex === -1) continue;
+    const replyBlock = blocks[replyIndex];
 
     const key = `${block.stream}/${block.fn}/${block.rcmd}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const nextTriggerIndex = blocks.findIndex((candidate, candidateIndex) => {
+      return candidateIndex > replyIndex && candidate.direction === "SEND" && candidate.wbit;
+    });
+    const followUpEnd = nextTriggerIndex === -1 ? blocks.length : nextTriggerIndex;
+    const actions = blocks
+      .slice(replyIndex + 1, followUpEnd)
+      .filter((candidate) => candidate.direction === "RECV")
+      .map((candidate) => buildImportedAction(block, candidate));
+
     templates.push({
       name: block.label.toLowerCase(),
       match: { stream: block.stream, function: block.fn, rcmd: block.rcmd },
       reply: { stream: replyBlock.stream, function: replyBlock.fn, ack: 0 },
+      actions,
     });
   }
 
@@ -348,6 +581,11 @@ export function RulesTab({
                     {t.match.rcmd ? <Badge tone="yellow">{t.match.rcmd}</Badge> : null}
                     <span className="log-import-arrow">→</span>
                     <span className="mono">S{t.reply.stream}F{t.reply.function}</span>
+                    {t.actions.map((action, index) => (
+                      <span className="log-import-followup mono" key={`${action.stream}-${action.function}-${index}`}>
+                        + {sendSummary(action)}
+                      </span>
+                    ))}
                     <span className="log-import-label">{t.name}</span>
                   </div>
                 ))}

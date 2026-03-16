@@ -52,4 +52,26 @@ describe("HsmsTab", () => {
     expect(screen.getByText("Conveyor / Example Log")).toBeInTheDocument();
     expect(screen.getByText("No automated host bring-up runs after HSMS select.")).toBeInTheDocument();
   });
+
+  it("flags wildcard addresses as invalid in active mode", async () => {
+    const user = userEvent.setup();
+    const snapshot = makeSnapshot();
+    snapshot.hsms.mode = "active";
+    snapshot.hsms.ip = "0.0.0.0";
+
+    render(
+      <HsmsTab
+        hsms={snapshot.hsms}
+        device={snapshot.device}
+        restartRequired={false}
+        onChangeHsms={vi.fn()}
+        onChangeDevice={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Validation Issues"));
+    expect(
+      screen.getAllByText("Active mode must target a concrete host address. Use 127.0.0.1 for a local passive equipment."),
+    ).toHaveLength(2);
+  });
 });

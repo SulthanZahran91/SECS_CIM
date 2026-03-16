@@ -358,14 +358,27 @@ func (m *Manager) armSelectionTimeout(session *session, timeout time.Duration) {
 }
 
 func joinAddress(host string, port int, active bool) string {
+	host = strings.TrimSpace(host)
+	if active {
+		return net.JoinHostPort(normalizeDialHost(host), strconv.Itoa(port))
+	}
 	if host == "" {
-		if active {
-			host = "127.0.0.1"
-		} else {
-			host = "0.0.0.0"
-		}
+		host = "0.0.0.0"
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+func normalizeDialHost(host string) string {
+	if host == "" {
+		return "127.0.0.1"
+	}
+
+	trimmed := strings.Trim(host, "[]")
+	if ip := net.ParseIP(trimmed); ip != nil && ip.IsUnspecified() {
+		return "127.0.0.1"
+	}
+
+	return host
 }
 
 func timerDuration(seconds int, fallback time.Duration) time.Duration {
