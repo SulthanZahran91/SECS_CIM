@@ -38,7 +38,7 @@ function createAction(): RuleAction {
     stream: 6,
     function: 11,
     wbit: true,
-    body: 'L:1 <A "EVENT">',
+    body: '<L,1 [L0]\n  <A,5 EVENT [CEID]>\n>.',
   };
 }
 
@@ -193,178 +193,36 @@ function extractLoggedCEID(block: string, body: string): string {
   return headerMatch ? headerMatch[1].trim() : "";
 }
 
-interface LoggedBodyToken {
-  type: string;
-  length: number;
-  value: string;
-}
-
-interface LoggedListState {
-  count: number;
-  children: string[];
-}
-
-function parseLoggedBody(body: string): string {
+function normalizeLoggedBody(body: string): string {
   const lines = body
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.trim().length > 0);
   if (lines.length === 0) {
     return "";
   }
 
-  const stack: LoggedListState[] = [];
-  let root = "";
-
-  function attach(item: string) {
-    if (stack.length === 0) {
-      root = item;
-      return;
-    }
-    stack[stack.length - 1].children.push(item);
+  const meaningfulLines = lines.filter((line) => line.trim() !== ".");
+  if (meaningfulLines.length === 0) {
+    return "";
   }
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\.\s*$/, "").trim();
-    if (!line) {
-      continue;
-    }
-    if (line === ">") {
-      const completed = stack.pop();
-      if (!completed) {
-        continue;
-      }
-      attach(compactLoggedList(completed));
-      continue;
-    }
-    if (!line.startsWith("<")) {
-      continue;
-    }
+  const nestedIndent = meaningfulLines.slice(1).reduce((smallest, line) => {
+    const match = line.match(/^[ \t]*/);
+    return Math.min(smallest, match ? match[0].length : 0);
+  }, Number.POSITIVE_INFINITY);
+  const sharedNestedIndent = Number.isFinite(nestedIndent) ? nestedIndent : 0;
 
-    const token = parseLoggedToken(line);
-    if (!token) {
-      continue;
-    }
-
-    if (token.type === "L") {
-      if (token.length === 0) {
-        attach("L:0");
-        continue;
-      }
-      stack.push({ count: token.length, children: [] });
-      continue;
-    }
-
-    const scalar = parseLoggedScalar(token);
-    if (scalar) {
-      attach(scalar);
-    }
-  }
-
-  while (stack.length > 0) {
-    attach(compactLoggedList(stack.pop()!));
-  }
-
-  return root;
-}
-
-function compactLoggedList(list: LoggedListState): string {
-  return list.children.length > 0 ? `L:${list.count} ${list.children.join(" ")}` : `L:${list.count}`;
-}
-
-function parseLoggedToken(line: string): LoggedBodyToken | null {
-  const inner = line.endsWith(">") ? line.slice(1, -1).trim() : line.slice(1).trim();
-  const commaIndex = inner.indexOf(",");
-  if (commaIndex === -1) {
-    return null;
-  }
-
-  const type = inner.slice(0, commaIndex).trim().toUpperCase();
-  let cursor = commaIndex + 1;
-  while (cursor < inner.length && /\s/.test(inner[cursor])) {
-    cursor += 1;
-  }
-
-  let lengthText = "";
-  while (cursor < inner.length && /\d/.test(inner[cursor])) {
-    lengthText += inner[cursor];
-    cursor += 1;
-  }
-  if (!lengthText) {
-    return null;
-  }
-
-  const remainder = inner.slice(cursor).trim();
-  let value = remainder;
-  if (value.startsWith("[") && value.endsWith("]")) {
-    value = "";
-  } else if (value.endsWith("]")) {
-    const labelIndex = value.lastIndexOf(" [");
-    if (labelIndex !== -1) {
-      value = value.slice(0, labelIndex).trim();
-    }
-  }
-  return {
-    type,
-    length: Number.parseInt(lengthText, 10),
-    value,
-  };
-}
-
-function parseLoggedScalar(token: LoggedBodyToken): string | null {
-  const type = token.type === "U" ? "U4" : token.type === "I" ? "I4" : token.type;
-
-  switch (type) {
-    case "A":
-      return `<A ${JSON.stringify(token.value)}>`;
-    case "B":
-      if (!token.value) {
-        return "<B>";
-      }
-      return `<B ${token.value.split(/\s+/).map(formatBinaryToken).join(" ")}>`;
-    case "BOOLEAN": {
-      const normalized = token.value.toUpperCase();
-      if (normalized === "TRUE" || normalized === "T" || normalized === "1") {
-        return "<BOOLEAN TRUE>";
-      }
-      if (normalized === "FALSE" || normalized === "F" || normalized === "0") {
-        return "<BOOLEAN FALSE>";
-      }
-      return null;
-    }
-    case "U1":
-    case "U2":
-    case "U4":
-    case "I1":
-    case "I2":
-    case "I4":
-      return token.value ? `<${type} ${token.value}>` : null;
-    default:
-      return null;
-  }
-}
-
-function formatBinaryToken(raw: string): string {
-  const value = raw.trim();
-  if (!value) {
-    return "0x00";
-  }
-  if (/^0x/i.test(value)) {
-    return `0x${value.slice(2).toUpperCase().padStart(2, "0")}`;
-  }
-  if (/[A-Fa-f]/.test(value)) {
-    return `0x${value.toUpperCase().padStart(2, "0")}`;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (Number.isNaN(parsed)) {
-    return value;
-  }
-  return `0x${parsed.toString(16).toUpperCase().padStart(2, "0")}`;
+  return meaningfulLines
+    .map((line, index) =>
+      index === 0 ? line.trimStart() : line.slice(Math.min(sharedNestedIndent, line.length)),
+    )
+    .join("\n")
+    .trim();
 }
 
 function buildImportedAction(triggerBlock: ParsedBlock, outboundBlock: ParsedBlock): ImportedRuleAction {
-  const body = parseLoggedBody(outboundBlock.body);
+  const body = normalizeLoggedBody(outboundBlock.body);
 
   return {
     delayMs:
@@ -1068,21 +926,19 @@ function RuleCard({
                                 );
                                 updateActions(nextActions);
                               }}
-                              placeholder={'L:2\n  <A "TRANSFER">\n  <I 1>'}
+                              placeholder={'<L,2 [L0]\n  <A,8 TRANSFER [RCMD]>\n  <I4,1 1 [COUNT]>\n>.'}
                               rows={6}
                               spellCheck={false}
                             />
                           </label>
                           <div className="meta-note">
-                            Handwrite the outbound message directly. Supported body syntax matches the monitor style:
+                            Handwrite the outbound message directly. The editor accepts both compact monitor SML like
                             {" "}
-                            <code>L:n</code>, <code>&lt;A "text"&gt;</code>, <code>&lt;I 1&gt;</code>,
+                            <code>L:2 &lt;A "TRANSFER"&gt; &lt;I 1&gt;</code>
                             {" "}
-                            <code>&lt;I1 -1&gt;</code>, <code>&lt;I2 -2&gt;</code>, <code>&lt;I4 -3&gt;</code>,
+                            and the logged format used in <code>example_conveyor_handshake.log</code> like
                             {" "}
-                            <code>&lt;U1 1&gt;</code>, <code>&lt;U2 2&gt;</code>, <code>&lt;U4 4&gt;</code>,
-                            {" "}
-                            <code>&lt;B 0x00&gt;</code>, and <code>&lt;BOOLEAN TRUE&gt;</code>.
+                            <code>&lt;L,2 [L0] ... &gt;.</code>.
                           </div>
                         </div>
                       </div>

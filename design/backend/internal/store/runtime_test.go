@@ -264,6 +264,66 @@ func TestRunScheduledBuildsGenericOutboundMessage(t *testing.T) {
 	}
 }
 
+func TestRunScheduledBuildsOutboundMessageFromLoggedBodyFormat(t *testing.T) {
+	store := New()
+	store.ClearLog()
+
+	rule := store.Snapshot().Rules[0]
+	rule.Actions = []model.RuleAction{
+		{
+			ID:       "action-1",
+			DelayMS:  0,
+			Type:     "send",
+			Stream:   2,
+			Function: 49,
+			WBit:     true,
+			Body: "<L,4 []\n" +
+				"  <U4,1 0 [DATAID]>\n" +
+				"  <A,0  [OBJSPEC]>\n" +
+				"  <A,8 TRANSFER [RCMD]>\n" +
+				"  <L,0 [CPList]>\n" +
+				">.",
+		},
+	}
+	if _, err := store.UpdateRule(rule); err != nil {
+		t.Fatalf("update rule: %v", err)
+	}
+
+	now := time.Date(2026, time.March, 10, 16, 18, 0, 0, time.UTC)
+	store.ProcessInbound(InboundMessage{
+		Stream:   2,
+		Function: 41,
+		WBit:     true,
+		RCMD:     "TRANSFER",
+		Fields: map[string]string{
+			"SourcePort": "LP01",
+		},
+	}, now)
+
+	result, err := store.RunScheduled(now)
+	if err != nil {
+		t.Fatalf("run scheduled actions: %v", err)
+	}
+
+	if len(result.Outbound) != 1 {
+		t.Fatalf("expected one outbound message, got %d", len(result.Outbound))
+	}
+
+	message := result.Outbound[0]
+	if message.Stream != 2 || message.Function != 49 || !message.WBit {
+		t.Fatalf("expected S2F49 W outbound message, got %#v", message)
+	}
+	if message.Body == nil || message.Body.Type != hsms.ItemList || len(message.Body.Children) != 4 {
+		t.Fatalf("expected logged body to parse as four-item list, got %#v", message.Body)
+	}
+	if got := message.Body.Children[2].ScalarValue(); got != "TRANSFER" {
+		t.Fatalf("expected RCMD child TRANSFER, got %q", got)
+	}
+	if got := message.RawSML(); got != "S2F49 W L:4 <U4 0> <A \"\"> <A \"TRANSFER\"> L:0" {
+		t.Fatalf("expected canonical raw SML from logged body, got %q", got)
+	}
+}
+
 func TestRuntimePublishesSnapshotUpdatesForInboundAndScheduledActions(t *testing.T) {
 	store := New()
 	store.ClearLog()

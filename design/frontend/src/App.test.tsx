@@ -323,7 +323,7 @@ describe("App", () => {
             stream: 2,
             function: 49,
             wbit: true,
-            body: 'L:4 <U4 0> <A ""> <A "TRANSFER"> L:0',
+            body: expect.stringMatching(/^<L,4 \[\][\s\S]*<A,8 TRANSFER \[RCMD\]>[\s\S]*<L,0 \[CPList\]>/),
           }),
         ],
       }),

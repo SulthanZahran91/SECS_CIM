@@ -39,6 +39,7 @@ describe("RulesTab", () => {
     expect(screen.getByDisplayValue('L:1 <A "TRANSFER_INITIATED">')).toBeInTheDocument();
 
     const bodyInput = screen.getByLabelText("Body (SML)");
+    expect(bodyInput).toHaveAttribute("placeholder", '<L,2 [L0]\n  <A,8 TRANSFER [RCMD]>\n  <I4,1 1 [COUNT]>\n>.');
     fireEvent.change(bodyInput, {
       target: { value: 'L:2\n  <A "TRANSFER_INITIATED">\n  <I 7>' },
     });
@@ -47,7 +48,7 @@ describe("RulesTab", () => {
 
     expect(bodyInput).toHaveValue('L:2\n  <A "TRANSFER_INITIATED">\n  <I 7>');
     expect(screen.getByText("S6F11")).toBeInTheDocument();
-    expect(screen.getByText(/Handwrite the outbound message directly/)).toBeInTheDocument();
+    expect(screen.getByText(/example_conveyor_handshake\.log/)).toBeInTheDocument();
   });
 
   it("surfaces readiness issues and applies starter presets", async () => {
@@ -249,8 +250,62 @@ describe("RulesTab", () => {
         stream: 2,
         function: 49,
         wbit: true,
-        body:
-          'L:4 <U4 0> <A ""> <A "TRANSFER"> L:4 L:2 <A "COMMANDINFO"> L:2 L:2 <A "COMMANDID"> <A "11991"> L:2 <A "PRIORITY"> <U2 50> L:2 <A "TRANSFERINFO"> L:3 L:2 <A "CARRIERID"> <A "BBENFB2816"> L:2 <A "SOURCE"> <A "B1ACNV13201-201"> L:2 <A "DEST"> <A "B1ACNV13201-999"> L:2 <A "CARRIERATTRIBUTE"> L:2 L:2 <A "EMPTYSTATUS"> <U2 1> L:2 <A "MATERIALCODE"> <A ""> L:2 <A "CHILDCARRIERINFO"> L:0',
+        body: [
+          "<L,4 []",
+          "  <U4,1 0 [DATAID]>",
+          "  <A,0  [OBJSPEC]>",
+          "  <A,8 TRANSFER [RCMD]>",
+          "  <L,4 [CPList]",
+          "    <L,2 []>",
+          "      <A,11 COMMANDINFO [CPNAME]>",
+          "      <L,2 [CEPVAL]>",
+          "        <L,2 []>",
+          "          <A,9 COMMANDID [CPNAME]>",
+          "          <A,5 11991 [CPVAL]>",
+          "        >",
+          "        <L,2 []>",
+          "          <A,8 PRIORITY [CPNAME]>",
+          "          <U2,1 50 [CPVAL]>",
+          "        >",
+          "      >",
+          "    >",
+          "    <L,2 []>",
+          "      <A,12 TRANSFERINFO [CPNAME]>",
+          "      <L,3 [CEPVAL]>",
+          "        <L,2 []>",
+          "          <A,9 CARRIERID [CPNAME]>",
+          "          <A,10 BBENFB2816 [CPVAL]>",
+          "        >",
+          "        <L,2 []>",
+          "          <A,6 SOURCE [CPNAME]>",
+          "          <A,15 B1ACNV13201-201 [CPVAL]>",
+          "        >",
+          "        <L,2 [L333]>",
+          "          <A,4 DEST [CPNAME]>",
+          "          <A,15 B1ACNV13201-999 [CPNAME]>",
+          "        >",
+          "      >",
+          "    >",
+          "    <L,2 []>",
+          "      <A,16 CARRIERATTRIBUTE [CPNAME]>",
+          "      <L,2 [CEPVAL]>",
+          "        <L,2 []>",
+          "          <A,11 EMPTYSTATUS [CPNAME]>",
+          "          <U2,1 1 [CPVAL]>",
+          "        >",
+          "        <L,2 []>",
+          "          <A,12 MATERIALCODE [CPNAME]>",
+          "          <A,0  [CPVAL]>",
+          "        >",
+          "      >",
+          "    >",
+          "    <L,2 []>",
+          "      <A,16 CHILDCARRIERINFO [CPNAME]>",
+          "      <L,0 [CEPVAL]>",
+          "    >",
+          "  >",
+          ">.",
+        ].join("\n"),
       },
     ]);
   });
@@ -325,7 +380,14 @@ describe("RulesTab", () => {
         stream: 2,
         function: 49,
         wbit: true,
-        body: 'L:4 <U4 0> <A ""> <A "TRANSFER"> L:0',
+        body: [
+          "<L,4 []",
+          "  <U4,1 0 [DATAID]>",
+          "  <A,0  [OBJSPEC]>",
+          "  <A,8 TRANSFER [RCMD]>",
+          "  <L,0 [CPList]>",
+          ">.",
+        ].join("\n"),
       },
     ]);
   });

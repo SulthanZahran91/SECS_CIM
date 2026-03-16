@@ -51,6 +51,26 @@ func TestParseSMLItemParsesNestedGenericPayload(t *testing.T) {
 	}
 }
 
+func TestParseSMLItemParsesLoggedExampleBody(t *testing.T) {
+	item, err := ParseSMLItem("<L,2 [L0]\n  <A,8 TRANSFER [RCMD]>\n  <B,1 4 [HCACK]>\n>.")
+	if err != nil {
+		t.Fatalf("parse logged SML payload: %v", err)
+	}
+
+	if item.Type != ItemList || len(item.Children) != 2 {
+		t.Fatalf("expected outer list with two children, got %#v", item)
+	}
+	if got := item.Children[0].ScalarValue(); got != "TRANSFER" {
+		t.Fatalf("expected first child TRANSFER, got %q", got)
+	}
+	if got := item.Children[1].ScalarValue(); got != "0x04" {
+		t.Fatalf("expected second child binary 0x04, got %q", got)
+	}
+	if got := item.Compact(); got != "L:2 <A \"TRANSFER\"> <B 0x04>" {
+		t.Fatalf("expected canonical compact output, got %q", got)
+	}
+}
+
 func TestExtractS6F11CEIDRequiresRecognizedEventShapes(t *testing.T) {
 	genericBody := List(ASCII("TRANSFER_INITIATED"), I4(7))
 	genericMessage := Message{Stream: 6, Function: 11, Body: &genericBody}

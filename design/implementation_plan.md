@@ -216,6 +216,7 @@ Done:
 - The message workspace now includes client-side search plus direction/source filters so live traffic can be narrowed without losing the live-tail workflow
 - The HSMS tab now shows `restart required` only for unapplied connection-setting changes, and that indicator clears after a successful stop/start cycle
 - The Rules tab now uses a generic outbound-message editor with explicit `Stream`, `Function`, `W-Bit`, and hand-authored body text instead of a fixed `S6F11` report builder
+- The rule body editor now accepts the raw logged SML structure used in `example_conveyor_handshake.log` in addition to the existing compact monitor-style syntax, and log-imported follow-up actions preserve that logged format in the textarea
 - The UI now opens with an operations overview strip, richer toolbar status, denser state summaries, and more responsive layout/styling for operator use on narrower screens
 - The authoring flows now include rule starter presets, rule readiness feedback, inline HSMS/device validation, and explicit save-versus-restart guidance for connection edits
 - The rule editor now includes an execution preview timeline that summarizes trigger, immediate reply, delayed outbound messages, and runtime mutations as the rule is edited
