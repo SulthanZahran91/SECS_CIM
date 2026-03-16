@@ -2,6 +2,7 @@ package sim
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"net"
 	"strconv"
@@ -482,30 +483,20 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	if onlineReq.Stream != 1 || onlineReq.Function != 17 || !onlineReq.WBit {
 		t.Fatalf("expected S1F17 bootstrap request, got %#v", onlineReq)
 	}
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "3"
+	})
 
-	onlineEvent := hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
-		SystemBytes: 0x0000BEEF,
-		Body: itemPtr(hsms.List(
-			hsms.U4(0),
-			hsms.U2(3),
-			hsms.List(
-				hsms.List(
-					hsms.U2(1),
-					hsms.List(),
-				),
-			),
-		)),
-	}
+	onlineEvent := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000BEEF, 3)
 	writeMessage(t, conn, onlineEvent)
 
 	eventAck := readMessage(t, conn)
 	if eventAck.Stream != 6 || eventAck.Function != 12 || eventAck.SystemBytes != onlineEvent.SystemBytes {
 		t.Fatalf("expected S6F12 ack for interleaved online event, got %#v", eventAck)
 	}
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 1 && step.Expect.Function == 18
+	})
 
 	writeMessage(t, conn, hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
@@ -698,7 +689,7 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Function:    4,
 		WBit:        false,
 		SystemBytes: statusReq.SystemBytes,
-		Body:        itemPtr(hsms.List(hsms.U1(5))),
+		Body:        exampleConveyorStatusReply(t, 6),
 	})
 
 	pauseReq := readMessage(t, conn)
@@ -709,105 +700,80 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		t.Fatalf("unexpected PAUSE command body: %s", got)
 	}
 	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), pauseReq.SystemBytes, 0))
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "57"
+	})
 
-	pauseInitiated := hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
-		SystemBytes: 0x0000CA02,
-		Body: itemPtr(hsms.List(
-			hsms.U2(0),
-			hsms.U2(57),
-			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
-		)),
-	}
+	pauseInitiated := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA02, 57)
 	writeMessage(t, conn, pauseInitiated)
 	pauseInitiatedAck := readMessage(t, conn)
 	if pauseInitiatedAck.Stream != 6 || pauseInitiatedAck.Function != 12 || pauseInitiatedAck.SystemBytes != pauseInitiated.SystemBytes {
 		t.Fatalf("expected S6F12 ack for pause initiated event, got %#v", pauseInitiatedAck)
 	}
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "55"
+	})
 
-	pauseCompleted := hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
-		SystemBytes: 0x0000CA03,
-		Body: itemPtr(hsms.List(
-			hsms.U2(0),
-			hsms.U2(55),
-			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
-		)),
-	}
+	logCursor := len(state.Snapshot().Messages)
+	pauseCompleted := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA03, 55)
 	writeMessage(t, conn, pauseCompleted)
 	pauseCompletedAck := readMessage(t, conn)
 	if pauseCompletedAck.Stream != 6 || pauseCompletedAck.Function != 12 || pauseCompletedAck.SystemBytes != pauseCompleted.SystemBytes {
 		t.Fatalf("expected S6F12 ack for pause completed event, got %#v", pauseCompletedAck)
 	}
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		if step.Expect.Stream != 1 || step.Expect.Function != 4 || step.Send == nil {
+			return false
+		}
+		nextMessage, err := step.Send(state.ConfigSnapshot())
+		return err == nil && nextMessage.Stream == 1 && nextMessage.Function == 3 && nextMessage.Body != nil && nextMessage.Body.Compact() == "L:1 <U2 98>"
+	})
 
 	for _, svid := range []uint16{98, 81, 83, 4, 401, 507, 509, 511, 76, 628, 631, 632} {
-		statusReq = readMessage(t, conn)
-		if statusReq.Stream != 1 || statusReq.Function != 3 || !statusReq.WBit || statusReq.Body == nil {
-			t.Fatalf("expected S1F3 status request for SVID %d, got %#v", svid, statusReq)
-		}
-		if got := statusReq.Body.Compact(); got != "L:1 <U2 "+strconv.Itoa(int(svid))+">" {
-			t.Fatalf("unexpected S1F3 body for SVID %d: %s", svid, got)
+		var requestRecord model.MessageRecord
+		requestRecord, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
+			return record.Direction == "OUT" &&
+				record.SF == "S1F3" &&
+				record.Detail.RawSML == fmt.Sprintf("S1F3 W L:1 <U2 %d>", svid)
+		})
+		if requestRecord.Label != "S1F3" {
+			t.Fatalf("expected logged S1F3 request for SVID %d, got %#v", svid, requestRecord)
 		}
 		writeMessage(t, conn, hsms.Message{
 			SessionID:   uint16(hsmsConfig.SessionID),
 			Stream:      1,
 			Function:    4,
 			WBit:        false,
-			SystemBytes: statusReq.SystemBytes,
-			Body:        itemPtr(hsms.List()),
+			SystemBytes: 0x0000D000 + uint32(svid),
+			Body:        exampleConveyorStatusReply(t, svid),
 		})
 	}
 
-	resumeReq := readMessage(t, conn)
-	if resumeReq.Stream != 2 || resumeReq.Function != 41 || !resumeReq.WBit || resumeReq.Body == nil {
-		t.Fatalf("expected RESUME S2F41 request, got %#v", resumeReq)
-	}
-	if got := resumeReq.Body.Compact(); got != `L:2 <A "RESUME"> L:0` {
-		t.Fatalf("unexpected RESUME command body: %s", got)
-	}
-	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), resumeReq.SystemBytes, 0))
+	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
+		return record.Direction == "OUT" &&
+			record.SF == "S2F41" &&
+			record.Detail.RawSML == `S2F41 W L:2 <A "RESUME"> L:0`
+	})
+	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), 0x0000D100, 0))
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "53"
+	})
 
-	autoComplete := hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
-		SystemBytes: 0x0000CA04,
-		Body: itemPtr(hsms.List(
-			hsms.U2(0),
-			hsms.U2(53),
-			hsms.List(hsms.List(hsms.U2(1), hsms.List())),
-		)),
-	}
+	autoComplete := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA04, 53)
 	writeMessage(t, conn, autoComplete)
-	autoCompleteAck := readMessage(t, conn)
-	if autoCompleteAck.Stream != 6 || autoCompleteAck.Function != 12 || autoCompleteAck.SystemBytes != autoComplete.SystemBytes {
-		t.Fatalf("expected S6F12 ack for auto complete event, got %#v", autoCompleteAck)
-	}
+	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
+		return record.Direction == "OUT" && record.SF == "S6F12" && record.Detail.RawSML == "S6F12 <B 0x00>"
+	})
+	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
+		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "601"
+	})
 
-	conveyorChange := hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      6,
-		Function:    11,
-		WBit:        true,
-		SystemBytes: 0x0000CA05,
-		Body: itemPtr(hsms.List(
-			hsms.U2(0),
-			hsms.U2(601),
-			hsms.List(hsms.List(hsms.U2(23), hsms.List(hsms.U2(1)))),
-		)),
-	}
+	conveyorChange := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA05, 601)
 	writeMessage(t, conn, conveyorChange)
-	conveyorChangeAck := readMessage(t, conn)
-	if conveyorChangeAck.Stream != 6 || conveyorChangeAck.Function != 12 || conveyorChangeAck.SystemBytes != conveyorChange.SystemBytes {
-		t.Fatalf("expected S6F12 ack for conveyor state change event, got %#v", conveyorChangeAck)
-	}
+	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
+		return record.Direction == "OUT" && record.SF == "S6F12" && record.Detail.RawSML == "S6F12 <B 0x00>"
+	})
+	waitForBootstrapCleared(t, controller)
 
 	waitFor(t, time.Second, func() bool {
 		messages := state.Snapshot().Messages
@@ -958,6 +924,146 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) {
 
 func itemPtr(item hsms.Item) *hsms.Item {
 	return &item
+}
+
+func exampleConveyorEvent(t *testing.T, sessionID uint16, systemBytes uint32, ceid uint16) hsms.Message {
+	t.Helper()
+
+	reportID := uint16(1)
+	data := hsms.List()
+	if ceid == 601 {
+		reportID = 23
+		data = hsms.List(hsms.U2(1))
+	}
+
+	return hsms.Message{
+		SessionID:   sessionID,
+		Stream:      6,
+		Function:    11,
+		WBit:        true,
+		SystemBytes: systemBytes,
+		Body: itemPtr(hsms.List(
+			hsms.U2(0),
+			hsms.U2(ceid),
+			hsms.List(hsms.List(hsms.U2(reportID), data)),
+		)),
+	}
+}
+
+func exampleConveyorStatusReply(t *testing.T, svid uint16) *hsms.Item {
+	t.Helper()
+
+	var body hsms.Item
+	switch svid {
+	case 6:
+		body = hsms.List(hsms.U1(5))
+	case 98:
+		body = hsms.List(hsms.List(hsms.ASCII("SEMI.0309")))
+	case 81, 83, 4, 628, 631, 632:
+		body = hsms.List(hsms.List())
+	case 401:
+		body = hsms.List(hsms.U2(1))
+	case 507:
+		body = hsms.List(hsms.List(
+			hsms.List(
+				hsms.ASCII("B1ACNV15201-201"),
+				hsms.ASCII(""),
+				hsms.U2(0),
+				hsms.U2(1),
+				hsms.U2(0),
+				hsms.U2(1),
+				hsms.U2(0),
+				hsms.U2(15),
+				hsms.U2(0),
+			),
+		))
+	case 509:
+		body = hsms.List(hsms.List(
+			hsms.List(
+				hsms.ASCII("B1ACNV15201-305"),
+				hsms.U2(0),
+				hsms.U2(0),
+				hsms.U2(1),
+				hsms.U2(0),
+				hsms.U2(1),
+			),
+		))
+	case 511:
+		body = hsms.List(hsms.List(
+			hsms.List(
+				hsms.ASCII("B1ACNV15201-595"),
+				hsms.U2(0),
+				hsms.U2(0),
+				hsms.U2(0),
+				hsms.ASCII(""),
+				hsms.ASCII(""),
+			),
+		))
+	case 76:
+		body = hsms.List(hsms.U2(62))
+	default:
+		t.Fatalf("unsupported conveyor SVID %d", svid)
+	}
+
+	return &body
+}
+
+func waitForBootstrapStep(t *testing.T, controller *Controller, match func(hostBootstrapStep) bool) {
+	t.Helper()
+
+	waitFor(t, time.Second, func() bool {
+		step, ok := currentBootstrapStep(controller)
+		return ok && match(step)
+	})
+}
+
+func waitForBootstrapCleared(t *testing.T, controller *Controller) {
+	t.Helper()
+
+	waitFor(t, time.Second, func() bool {
+		controller.mu.Lock()
+		defer controller.mu.Unlock()
+		return controller.hostBootstrap.Profile == ""
+	})
+}
+
+func currentBootstrapStep(controller *Controller) (hostBootstrapStep, bool) {
+	controller.mu.Lock()
+	state := controller.hostBootstrap
+	controller.mu.Unlock()
+	if state.Profile == "" {
+		return hostBootstrapStep{}, false
+	}
+
+	steps := hostBootstrapSteps(state.Profile)
+	if state.StepIndex < 0 || state.StepIndex >= len(steps) {
+		return hostBootstrapStep{}, false
+	}
+
+	return steps[state.StepIndex], true
+}
+
+func waitForLoggedMessage(t *testing.T, state *store.Store, cursor int, match func(model.MessageRecord) bool) (model.MessageRecord, int) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		messages := state.Snapshot().Messages
+		for index := cursor; index < len(messages); index++ {
+			if match(messages[index]) {
+				return messages[index], index + 1
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	messages := state.Snapshot().Messages
+	tailStart := len(messages) - 3
+	if tailStart < 0 {
+		tailStart = 0
+	}
+	t.Fatalf("logged message not observed after cursor %d; tail=%#v", cursor, messages[tailStart:])
+	return model.MessageRecord{}, cursor
 }
 
 func captureLogs(t *testing.T) *bytes.Buffer {

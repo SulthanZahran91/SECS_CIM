@@ -208,14 +208,15 @@ func (c *Controller) handleDataMessage(message hsms.Message) ([]hsms.Message, er
 		c.store.SetRuntimeError(normalizeRuntimeError(err))
 	}
 	if nextBootstrapMessage != nil {
-		if len(responses) == 0 {
-			if err := c.sendStandaloneMessage(*nextBootstrapMessage); err != nil {
-				log.Printf("send host bootstrap after %s: %v", message.Label(), err)
-				c.store.SetRuntimeError(normalizeRuntimeError(err))
+		if nextBootstrapMessage.SystemBytes == 0 {
+			transport := c.currentTransport()
+			if transport == nil {
+				return nil, ErrNotRunning
 			}
-		} else {
-			c.sendStandaloneMessageDeferred(*nextBootstrapMessage)
+			nextBootstrapMessage.SystemBytes = transport.ReserveSystemByte()
 		}
+		c.appendProtocolMessage(now, "OUT", *nextBootstrapMessage, "", "")
+		responses = append(responses, *nextBootstrapMessage)
 	}
 	if len(responses) == 0 {
 		return nil, nil
@@ -420,16 +421,6 @@ func (c *Controller) sendStandaloneMessage(message hsms.Message) error {
 
 	c.appendProtocolMessage(time.Now().UTC(), "OUT", message, "", "")
 	return nil
-}
-
-func (c *Controller) sendStandaloneMessageDeferred(message hsms.Message) {
-	go func() {
-		time.Sleep(time.Millisecond)
-		if err := c.sendStandaloneMessage(message); err != nil {
-			log.Printf("send deferred host bootstrap %s: %v", message.Label(), err)
-			c.store.SetRuntimeError(normalizeRuntimeError(err))
-		}
-	}()
 }
 
 func (c *Controller) transitionHostBootstrap(expect hostBootstrapState, next hostBootstrapState) bool {

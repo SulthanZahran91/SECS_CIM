@@ -9,9 +9,10 @@ import (
 )
 
 type hostBootstrapMatch struct {
-	Stream   byte
-	Function byte
-	CEID     string
+	Stream      byte
+	Function    byte
+	CEID        string
+	BodyMatches func(hsms.Message) bool
 }
 
 type hostBootstrapState struct {
@@ -126,51 +127,181 @@ func (m hostBootstrapMatch) Matches(message hsms.Message) bool {
 		return false
 	}
 	if m.CEID == "" {
-		return true
+		if m.BodyMatches == nil {
+			return true
+		}
+		return m.BodyMatches(message)
 	}
 	ceid, ok := hsms.ExtractS6F11CEID(message)
-	return ok && ceid == m.CEID
+	if !ok || ceid != m.CEID {
+		return false
+	}
+	if m.BodyMatches == nil {
+		return true
+	}
+	return m.BodyMatches(message)
 }
 
 func hostBootstrapSteps(profile string) []hostBootstrapStep {
 	switch profile {
 	case model.HostStartupProfileStocker:
 		return []hostBootstrapStep{
-			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14}},
-			{Send: sendS1F17, Expect: hostBootstrapMatch{Stream: 1, Function: 18}},
-			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32}},
+			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14, BodyMatches: matchS1F14EstablishCommAck}},
+			{Send: sendS1F17, Expect: hostBootstrapMatch{Stream: 1, Function: 18, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32, BodyMatches: matchSingleBinaryAck(0x00)}},
 		}
 	case model.HostStartupProfileConveyor:
 		steps := []hostBootstrapStep{
-			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14}},
-			{Send: sendS1F17, Expect: hostBootstrapMatch{Stream: 1, Function: 18}},
-			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32}},
-			{Send: sendConveyorS2F15, Expect: hostBootstrapMatch{Stream: 2, Function: 16}},
-			{Send: sendConveyorS2F37Disable, Expect: hostBootstrapMatch{Stream: 2, Function: 38}},
-			{Send: sendConveyorS2F33Reset, Expect: hostBootstrapMatch{Stream: 2, Function: 34}},
-			{Send: sendConveyorS2F33DefineReports, Expect: hostBootstrapMatch{Stream: 2, Function: 34}},
-			{Send: sendConveyorS2F35LinkReports, Expect: hostBootstrapMatch{Stream: 2, Function: 36}},
-			{Send: sendConveyorS2F37Enable, Expect: hostBootstrapMatch{Stream: 2, Function: 38}},
-			{Send: sendConveyorS5F3Disable, Expect: hostBootstrapMatch{Stream: 5, Function: 4}},
-			{Send: sendConveyorS5F3Enable, Expect: hostBootstrapMatch{Stream: 5, Function: 4}},
-			{Send: sendConveyorS1F3Status(6), Expect: hostBootstrapMatch{Stream: 1, Function: 4}},
-			{Send: sendConveyorS2F41Command("PAUSE"), Expect: hostBootstrapMatch{Stream: 2, Function: 42}},
-			{Send: nil, Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "55"}},
+			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14, BodyMatches: matchS1F14EstablishCommAck}},
+			{
+				Send:   sendS1F17,
+				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "3", BodyMatches: matchConveyorEventReport(3, 1, matchEmptyListItem)},
+			},
+			{Send: nil, Expect: hostBootstrapMatch{Stream: 1, Function: 18, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F15, Expect: hostBootstrapMatch{Stream: 2, Function: 16, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F37Disable, Expect: hostBootstrapMatch{Stream: 2, Function: 38, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F33Reset, Expect: hostBootstrapMatch{Stream: 2, Function: 34, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F33DefineReports, Expect: hostBootstrapMatch{Stream: 2, Function: 34, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F35LinkReports, Expect: hostBootstrapMatch{Stream: 2, Function: 36, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F37Enable, Expect: hostBootstrapMatch{Stream: 2, Function: 38, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS5F3Disable, Expect: hostBootstrapMatch{Stream: 5, Function: 4, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS5F3Enable, Expect: hostBootstrapMatch{Stream: 5, Function: 4, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS1F3Status(6), Expect: hostBootstrapMatch{Stream: 1, Function: 4, BodyMatches: matchConveyorStatusReply(6)}},
+			{Send: sendConveyorS2F41Command("PAUSE"), Expect: hostBootstrapMatch{Stream: 2, Function: 42, BodyMatches: matchCommandAck(0x00)}},
+			{
+				Send:   nil,
+				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "57", BodyMatches: matchConveyorEventReport(57, 1, matchEmptyListItem)},
+			},
+			{
+				Send:   nil,
+				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "55", BodyMatches: matchConveyorEventReport(55, 1, matchEmptyListItem)},
+			},
 		}
 		for _, svid := range conveyorStatusSVIDs {
 			steps = append(steps, hostBootstrapStep{
 				Send:   sendConveyorS1F3Status(svid),
-				Expect: hostBootstrapMatch{Stream: 1, Function: 4},
+				Expect: hostBootstrapMatch{Stream: 1, Function: 4, BodyMatches: matchConveyorStatusReply(svid)},
 			})
 		}
 		steps = append(steps, hostBootstrapStep{
 			Send:   sendConveyorS2F41Command("RESUME"),
-			Expect: hostBootstrapMatch{Stream: 2, Function: 42},
+			Expect: hostBootstrapMatch{Stream: 2, Function: 42, BodyMatches: matchCommandAck(0x00)},
+		}, hostBootstrapStep{
+			Send:   nil,
+			Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "53", BodyMatches: matchConveyorEventReport(53, 1, matchEmptyListItem)},
+		}, hostBootstrapStep{
+			Send:   nil,
+			Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "601", BodyMatches: matchConveyorEventReport(601, 23, matchSingleU2ListItem)},
 		})
 		return steps
 	default:
 		return nil
 	}
+}
+
+func matchS1F14EstablishCommAck(message hsms.Message) bool {
+	if message.Body == nil || message.Body.Type != hsms.ItemList || len(message.Body.Children) != 2 {
+		return false
+	}
+	if !matchSingleByteBinary(message.Body.Children[0], 0x00) {
+		return false
+	}
+	info := message.Body.Children[1]
+	return info.Type == hsms.ItemList &&
+		len(info.Children) == 2 &&
+		info.Children[0].Type == hsms.ItemASCII &&
+		info.Children[1].Type == hsms.ItemASCII
+}
+
+func matchSingleBinaryAck(ack byte) func(hsms.Message) bool {
+	return func(message hsms.Message) bool {
+		return message.Body != nil && matchSingleByteBinary(*message.Body, ack)
+	}
+}
+
+func matchCommandAck(ack byte) func(hsms.Message) bool {
+	return func(message hsms.Message) bool {
+		if message.Body == nil || message.Body.Type != hsms.ItemList || len(message.Body.Children) != 2 {
+			return false
+		}
+		return matchSingleByteBinary(message.Body.Children[0], ack) && matchEmptyListItem(message.Body.Children[1])
+	}
+}
+
+func matchConveyorEventReport(ceid uint16, reportID uint16, dataMatch func(hsms.Item) bool) func(hsms.Message) bool {
+	return func(message hsms.Message) bool {
+		if message.Body == nil || message.Body.Type != hsms.ItemList || len(message.Body.Children) != 3 {
+			return false
+		}
+		if message.Body.Children[0].ScalarValue() != "0" || message.Body.Children[1].ScalarValue() != fmt.Sprintf("%d", ceid) {
+			return false
+		}
+		reports := message.Body.Children[2]
+		if reports.Type != hsms.ItemList || len(reports.Children) != 1 {
+			return false
+		}
+		report := reports.Children[0]
+		if report.Type != hsms.ItemList || len(report.Children) != 2 || report.Children[0].ScalarValue() != fmt.Sprintf("%d", reportID) {
+			return false
+		}
+		return dataMatch(report.Children[1])
+	}
+}
+
+func matchConveyorStatusReply(svid uint16) func(hsms.Message) bool {
+	return func(message hsms.Message) bool {
+		if message.Body == nil || message.Body.Type != hsms.ItemList || len(message.Body.Children) != 1 {
+			return false
+		}
+
+		value := message.Body.Children[0]
+		switch svid {
+		case 6:
+			return value.Type == hsms.ItemU1
+		case 98:
+			return value.Type == hsms.ItemList &&
+				len(value.Children) == 1 &&
+				value.Children[0].Type == hsms.ItemASCII
+		case 81, 83, 4, 628, 631, 632:
+			return matchEmptyListItem(value)
+		case 401, 76:
+			return value.Type == hsms.ItemU2
+		case 507:
+			return matchListOfLists(value, 9)
+		case 509, 511:
+			return matchListOfLists(value, 6)
+		default:
+			return true
+		}
+	}
+}
+
+func matchSingleByteBinary(item hsms.Item, value byte) bool {
+	return item.Type == hsms.ItemBinary && len(item.Bytes) == 1 && item.Bytes[0] == value
+}
+
+func matchEmptyListItem(item hsms.Item) bool {
+	return item.Type == hsms.ItemList && len(item.Children) == 0
+}
+
+func matchSingleU2ListItem(item hsms.Item) bool {
+	return item.Type == hsms.ItemList &&
+		len(item.Children) == 1 &&
+		item.Children[0].Type == hsms.ItemU2 &&
+		item.Children[0].Uint16 == 1
+}
+
+func matchListOfLists(item hsms.Item, rowWidth int) bool {
+	if item.Type != hsms.ItemList || len(item.Children) == 0 {
+		return false
+	}
+	for _, child := range item.Children {
+		if child.Type != hsms.ItemList || len(child.Children) != rowWidth || child.Children[0].Type != hsms.ItemASCII {
+			return false
+		}
+	}
+	return true
 }
 
 func sendS1F13(config model.Snapshot) (hsms.Message, error) {

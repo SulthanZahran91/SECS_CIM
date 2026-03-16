@@ -98,6 +98,10 @@ func (m *Manager) Send(message Message) error {
 	return m.sendOnSession(session, message)
 }
 
+func (m *Manager) ReserveSystemByte() uint32 {
+	return m.nextSystemByte()
+}
+
 func (m *Manager) acceptLoop(ctx context.Context, listener net.Listener) {
 	for {
 		conn, err := listener.Accept()

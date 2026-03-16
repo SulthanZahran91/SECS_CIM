@@ -1,6 +1,6 @@
 # SECSIM Design Implementation Plan
 
-Last updated: 2026-03-13
+Last updated: 2026-03-16
 
 ## Purpose
 
@@ -183,6 +183,7 @@ Done:
 - Host startup is now an explicit profile choice instead of a single toggle:
   - `stocker` keeps the existing minimal bring-up
   - `conveyor` extends startup with the report, alarm, pause/resume, and status-poll setup taken from `example_conveyor_handshake.log`
+- The conveyor host-startup profile now also enforces the example handshake's key event checkpoints (`CEID 3`, `57`, `55`, `53`, `601`) and validates the example-style ACK/status payload formats in integration coverage
 - Rule-driven `S2F42` replies and scheduled outbound messages are now encoded and sent over the selected HSMS session
 - The SECS-II item codec now supports the hand-authored payload types used by the outbound message editor, including signed integer items and nested list parsing from SML-like text
 - Protocol-level tests now cover frame/item round-trips plus a live passive-session command flow through auto-response, rule match, reply, and scheduled event emission
