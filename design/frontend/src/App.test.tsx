@@ -104,6 +104,8 @@ describe("App", () => {
     expect(screen.getByText("Loading SECSIM scaffold…")).toBeInTheDocument();
     expect(await screen.findByText("2 rules")).toBeInTheDocument();
     expect(screen.getByText("Messages: 2")).toBeInTheDocument();
+    expect(screen.getByText("Header ID: 1")).toBeInTheDocument();
+    expect(screen.getByText("Device ID: 0")).toBeInTheDocument();
     expect(mockedApi.bootstrap).toHaveBeenCalledTimes(1);
   });
 

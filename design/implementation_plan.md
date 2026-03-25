@@ -1,6 +1,6 @@
 # SECSIM Design Implementation Plan
 
-Last updated: 2026-03-17
+Last updated: 2026-03-25
 
 ## Purpose
 
@@ -19,7 +19,7 @@ Current reality:
 - The Rules tab log importer now also converts follow-up equipment `RECV` exchanges into outbound `send` actions, so pasted equipment logs can capture trigger/reply flows plus subsequent host-initiated messages.
 - The Rules tab log importer now preserves repeated `S6F11` event reports as separate rules by importing `CEID` conditions, and live inbound `S6F11` traffic now exposes `CEID` for runtime rule matching.
 - Active-mode HSMS dialing now normalizes wildcard bind addresses (`0.0.0.0`, `::`) to loopback for local simulator-to-equipment testing, and the UI flags wildcard addresses as invalid active targets before runtime start.
-- Locally generated HSMS control/data frames now use the configured `Device ID` in header bytes 4-5, and transport trace logs now print that header ID on `Select.req`/`Select.rsp` for interoperability debugging.
+- Locally generated HSMS control/data frames now use the configured `Session ID` in header bytes 4-5, and transport trace logs now print that on-wire header ID on `Select.req`/`Select.rsp` for interoperability debugging.
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - HSMS runtime shutdown is now synchronous, so stop/start cycles wait for the old transport to release its socket before a new active dialer starts, which avoids overlapping first-connection attempts during restarts.

@@ -54,6 +54,26 @@ describe("HsmsTab", () => {
     expect(screen.getByText("No automated host bring-up runs after HSMS select.")).toBeInTheDocument();
   });
 
+  it("describes session id as the on-wire HSMS header value", () => {
+    const snapshot = makeSnapshot();
+
+    render(
+      <HsmsTab
+        hsms={snapshot.hsms}
+        device={snapshot.device}
+        restartRequired={false}
+        onChangeHsms={vi.fn()}
+        onChangeDevice={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Session ID")).toBeInTheDocument();
+    expect(screen.getByText("Device ID")).toBeInTheDocument();
+    expect(
+      screen.getByText("The HSMS wire header uses Session ID in bytes 4-5. Device ID is preserved in config, but it is not written into the HSMS header."),
+    ).toBeInTheDocument();
+  });
+
   it("flags wildcard addresses as invalid in active mode", async () => {
     const user = userEvent.setup();
     const snapshot = makeSnapshot();

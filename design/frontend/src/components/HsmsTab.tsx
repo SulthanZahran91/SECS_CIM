@@ -129,17 +129,17 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
               error={errors.sessionId}
             />
             <LabeledInput
-              label="Device ID (Header)"
+              label="Device ID"
               value={hsms.deviceId}
               onChange={(value) => onChangeHsms({ ...hsms, deviceId: toNumber(value) })}
               width={90}
               type="number"
               mono
-              hint="HSMS 4-5"
+              hint="cfg only"
               error={errors.deviceId}
             />
           </div>
-          <div className="meta-note">The HSMS wire header uses Device ID in bytes 4-5. Session ID is kept separately for simulator config compatibility.</div>
+          <div className="meta-note">The HSMS wire header uses Session ID in bytes 4-5. Device ID is preserved in config, but it is not written into the HSMS header.</div>
         </CollapsibleSection>
 
         <CollapsibleSection title="Timers (seconds)" defaultOpen={false}>

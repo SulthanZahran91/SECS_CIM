@@ -355,8 +355,8 @@ export default function App() {
             <span>
               HSMS: <span className={snapshot.runtime.hsmsState === "SELECTED" ? "text-green" : ""}>{snapshot.runtime.hsmsState}</span>
             </span>
-            <span>Header ID: {snapshot.hsms.deviceId}</span>
-            <span>Session ID: {snapshot.hsms.sessionId}</span>
+            <span>Header ID: {snapshot.hsms.sessionId}</span>
+            <span>Device ID: {snapshot.hsms.deviceId}</span>
             <span>
               {snapshot.hsms.mode} · {snapshot.hsms.ip}:{snapshot.hsms.port}
             </span>

@@ -436,7 +436,7 @@ func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) 
 		return snapshot.Runtime.HSMSState == "SELECTED" && snapshot.Runtime.LastError == ""
 	})
 
-	assertLogContains(t, traceOutput, "HSMS control OUT Select.req sid=0x0009")
+	assertLogContains(t, traceOutput, "HSMS control OUT Select.req sid=0x0029")
 }
 
 func TestControllerActiveHostStartupStockerBootstrapsAfterSelect(t *testing.T) {
