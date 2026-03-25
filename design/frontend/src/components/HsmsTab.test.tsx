@@ -49,7 +49,8 @@ describe("HsmsTab", () => {
     await user.click(screen.getByText("Handshake"));
     expect(screen.getByText("Host startup profile")).toBeInTheDocument();
     expect(screen.getByText("Stocker / Minimal")).toBeInTheDocument();
-    expect(screen.getByText("Conveyor / Example Log")).toBeInTheDocument();
+    expect(screen.getByText("Conveyor / Captured Trace")).toBeInTheDocument();
+    expect(screen.getByText("S1F17 Request On-Line")).toBeInTheDocument();
     expect(screen.getByText("No automated host bring-up runs after HSMS select.")).toBeInTheDocument();
   });
 

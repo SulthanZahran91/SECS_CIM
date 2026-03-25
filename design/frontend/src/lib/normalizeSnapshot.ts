@@ -54,6 +54,7 @@ export function normalizeSnapshot(snapshot: Snapshot): Snapshot {
       ...snapshot.hsms,
       handshake: {
         ...snapshot.hsms.handshake,
+        autoS1f17: snapshot.hsms.handshake?.autoS1f17 ?? true,
         autoHostStartup: hostStartupProfile !== "disabled",
         hostStartupProfile,
       },

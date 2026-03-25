@@ -25,6 +25,7 @@ const baseSnapshot: Snapshot = {
     handshake: {
       autoS1f13: true,
       autoS1f1: true,
+      autoS1f17: true,
       autoS2f25: false,
       autoHostStartup: false,
       hostStartupProfile: "disabled",

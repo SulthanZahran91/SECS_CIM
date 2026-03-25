@@ -23,6 +23,8 @@ Current reality:
 - The runtime now distinguishes pending HSMS connection restarts from generic config dirtiness, and idle selected sessions no longer trip false `T8` read timeouts.
 - HSMS transport tracing now logs TCP connect/accept/close plus control-frame flow (`Select`, `Deselect`, `Linktest`, `Separate`) for integration debugging.
 - HSMS runtime shutdown is now synchronous, so stop/start cycles wait for the old transport to release its socket before a new active dialer starts, which avoids overlapping first-connection attempts during restarts.
+- Passive-mode handshake automation now also supports `S1F17` -> `S1F18`, which matches host stacks that request online immediately after HSMS select.
+- The active conveyor startup profile now follows the captured working host/equipment trace, beginning with `S1F17` and early pause/event/status exchanges instead of the older example-log sequence.
 - Active-mode sessions can now optionally initiate a minimal host-style startup (`S1F13`, `S1F17`, `S2F31`, `S6F12`) for interoperability with equipment-side stacks.
 - Protocol coverage is still intentionally narrow: the current implementation focuses on handshake, remote-command, loopback, and event flows.
 - Rule-driven outbound actions can now declare generic `SxFy` messages with hand-authored SECS item bodies (`L`, `A`, signed/unsigned integers, `B`, `BOOLEAN`) across the UI, YAML config, runtime logging, and outbound HSMS encoding.
@@ -149,7 +151,8 @@ Done:
 - `T8` enforcement now applies to inter-byte stalls within a frame instead of idle time between frames, which keeps selected sessions up against quieter hosts
 - The backend now emits trace logs for TCP session lifecycle and HSMS control frames so external host handshake issues can be diagnosed from runtime logs
 - Runtime stop now waits for the HSMS transport goroutines and socket closure to finish before returning, which prevents overlapping active sessions on immediate restart
-- Active mode now has an optional host-startup path that sends `S1F13`, advances through `S1F17` and `S2F31`, and acknowledges inbound `S6F11` with `S6F12`
+- Passive mode now has configurable `S1F17` auto-response support so hosts that request online directly after select receive `S1F18` without custom rules
+- Active mode now has optional host-startup paths that either stay minimal (`S1F13` -> `S1F17` -> `S2F31`) or, for the conveyor profile, follow the captured working trace starting at `S1F17`, acknowledging `S6F11`, issuing `S2F15`/`S2F37`/`S2F33`/`S2F35`/`S5F3`/`S2F41`, and polling early status SVIDs
 
 Remaining:
 
@@ -188,7 +191,7 @@ Done:
   - `S6F11` / `S6F12`
 - Host startup is now an explicit profile choice instead of a single toggle:
   - `stocker` keeps the existing minimal bring-up
-  - `conveyor` extends startup with the report, alarm, pause/resume, and status-poll setup taken from `example_conveyor_handshake.log`
+- `conveyor` now mirrors the captured working host/equipment startup trace (`comms.pcapng`), including `S1F17`, `S6F11`/`S6F12`, `S2F31`, `S2F15`, `S2F37`, `S2F33`, `S2F35`, `S5F3`, `S2F41 PAUSE`, and early `S1F3` status polling
 - The conveyor host-startup profile now also enforces the example handshake's key event checkpoints (`CEID 3`, `57`, `55`, `53`, `601`) and validates the example-style ACK/status payload formats in integration coverage
 - Rule-driven `S2F42` replies and scheduled outbound messages are now encoded and sent over the selected HSMS session
 - The SECS-II item codec now supports the hand-authored payload types used by the outbound message editor, including signed integer items and nested list parsing from SML-like text

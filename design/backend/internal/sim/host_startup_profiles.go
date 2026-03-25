@@ -120,7 +120,7 @@ var conveyorEnabledCEIDs = []uint16{
 	647, 648, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711,
 }
 
-var conveyorStatusSVIDs = []uint16{98, 81, 83, 4, 401, 507, 509, 511, 76, 628, 631, 632}
+var conveyorStatusSVIDs = []uint16{4, 5, 6, 51, 52, 53, 507}
 
 func (m hostBootstrapMatch) Matches(message hsms.Message) bool {
 	if message.Stream != m.Stream || message.Function != m.Function {
@@ -152,7 +152,6 @@ func hostBootstrapSteps(profile string) []hostBootstrapStep {
 		}
 	case model.HostStartupProfileConveyor:
 		steps := []hostBootstrapStep{
-			{Send: sendS1F13, Expect: hostBootstrapMatch{Stream: 1, Function: 14, BodyMatches: matchS1F14EstablishCommAck}},
 			{
 				Send:   sendS1F17,
 				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "3", BodyMatches: matchConveyorEventReport(3, 1, matchEmptyListItem)},
@@ -160,22 +159,15 @@ func hostBootstrapSteps(profile string) []hostBootstrapStep {
 			{Send: nil, Expect: hostBootstrapMatch{Stream: 1, Function: 18, BodyMatches: matchSingleBinaryAck(0x00)}},
 			{Send: sendS2F31, Expect: hostBootstrapMatch{Stream: 2, Function: 32, BodyMatches: matchSingleBinaryAck(0x00)}},
 			{Send: sendConveyorS2F15, Expect: hostBootstrapMatch{Stream: 2, Function: 16, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS2F37Disable, Expect: hostBootstrapMatch{Stream: 2, Function: 38, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS2F33Reset, Expect: hostBootstrapMatch{Stream: 2, Function: 34, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS2F33DefineReports, Expect: hostBootstrapMatch{Stream: 2, Function: 34, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS2F35LinkReports, Expect: hostBootstrapMatch{Stream: 2, Function: 36, BodyMatches: matchSingleBinaryAck(0x00)}},
 			{Send: sendConveyorS2F37Enable, Expect: hostBootstrapMatch{Stream: 2, Function: 38, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS5F3Disable, Expect: hostBootstrapMatch{Stream: 5, Function: 4, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F33Reset, Expect: hostBootstrapMatch{Stream: 2, Function: 34, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F35Reset, Expect: hostBootstrapMatch{Stream: 2, Function: 36, BodyMatches: matchSingleBinaryAck(0x00)}},
+			{Send: sendConveyorS2F37Enable, Expect: hostBootstrapMatch{Stream: 2, Function: 38, BodyMatches: matchSingleBinaryAck(0x00)}},
 			{Send: sendConveyorS5F3Enable, Expect: hostBootstrapMatch{Stream: 5, Function: 4, BodyMatches: matchSingleBinaryAck(0x00)}},
-			{Send: sendConveyorS1F3Status(6), Expect: hostBootstrapMatch{Stream: 1, Function: 4, BodyMatches: matchConveyorStatusReply(6)}},
 			{Send: sendConveyorS2F41Command("PAUSE"), Expect: hostBootstrapMatch{Stream: 2, Function: 42, BodyMatches: matchCommandAck(0x00)}},
 			{
 				Send:   nil,
 				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "57", BodyMatches: matchConveyorEventReport(57, 1, matchEmptyListItem)},
-			},
-			{
-				Send:   nil,
-				Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "55", BodyMatches: matchConveyorEventReport(55, 1, matchEmptyListItem)},
 			},
 		}
 		for _, svid := range conveyorStatusSVIDs {
@@ -184,16 +176,6 @@ func hostBootstrapSteps(profile string) []hostBootstrapStep {
 				Expect: hostBootstrapMatch{Stream: 1, Function: 4, BodyMatches: matchConveyorStatusReply(svid)},
 			})
 		}
-		steps = append(steps, hostBootstrapStep{
-			Send:   sendConveyorS2F41Command("RESUME"),
-			Expect: hostBootstrapMatch{Stream: 2, Function: 42, BodyMatches: matchCommandAck(0x00)},
-		}, hostBootstrapStep{
-			Send:   nil,
-			Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "53", BodyMatches: matchConveyorEventReport(53, 1, matchEmptyListItem)},
-		}, hostBootstrapStep{
-			Send:   nil,
-			Expect: hostBootstrapMatch{Stream: 6, Function: 11, CEID: "601", BodyMatches: matchConveyorEventReport(601, 23, matchSingleU2ListItem)},
-		})
 		return steps
 	default:
 		return nil
@@ -318,17 +300,10 @@ func sendS2F31(config model.Snapshot) (hsms.Message, error) {
 
 func sendConveyorS2F15(config model.Snapshot) (hsms.Message, error) {
 	body := hsms.List(
-		hsms.List(
-			hsms.U2(62),
-			hsms.ASCII("B1ACNV15201"),
-		),
+		hsms.U2(62),
+		hsms.ASCII(conveyorStartupName(config)),
 	)
 	return buildStartupMessage(config, 2, 15, true, &body), nil
-}
-
-func sendConveyorS2F37Disable(config model.Snapshot) (hsms.Message, error) {
-	body := hsms.List(hsms.Boolean(false), hsms.List())
-	return buildStartupMessage(config, 2, 37, true, &body), nil
 }
 
 func sendConveyorS2F33Reset(config model.Snapshot) (hsms.Message, error) {
@@ -367,25 +342,21 @@ func sendConveyorS2F35LinkReports(config model.Snapshot) (hsms.Message, error) {
 	return buildStartupMessage(config, 2, 35, true, &body), nil
 }
 
+func sendConveyorS2F35Reset(config model.Snapshot) (hsms.Message, error) {
+	body := hsms.List(hsms.U4(1), hsms.List())
+	return buildStartupMessage(config, 2, 35, true, &body), nil
+}
+
 func sendConveyorS2F37Enable(config model.Snapshot) (hsms.Message, error) {
-	enabled := make([]hsms.Item, 0, len(conveyorEnabledCEIDs))
-	for _, ceid := range conveyorEnabledCEIDs {
-		enabled = append(enabled, hsms.U2(ceid))
-	}
 	body := hsms.List(
 		hsms.Boolean(true),
-		hsms.List(enabled...),
+		hsms.List(),
 	)
 	return buildStartupMessage(config, 2, 37, true, &body), nil
 }
 
-func sendConveyorS5F3Disable(config model.Snapshot) (hsms.Message, error) {
-	body := hsms.List(hsms.Binary(0x00), hsms.U4(0))
-	return buildStartupMessage(config, 5, 3, true, &body), nil
-}
-
 func sendConveyorS5F3Enable(config model.Snapshot) (hsms.Message, error) {
-	body := hsms.List(hsms.Binary(0x80), hsms.U4(0))
+	body := hsms.List(hsms.Binary(0x01), hsms.U4(0))
 	return buildStartupMessage(config, 5, 3, true, &body), nil
 }
 
@@ -412,6 +383,14 @@ func buildReportDefinitionItem(definition reportDefinition) hsms.Item {
 		hsms.U2(definition.ID),
 		hsms.List(vids...),
 	)
+}
+
+func conveyorStartupName(config model.Snapshot) string {
+	name := config.Device.Name
+	if name == "" {
+		return "TEST_CNVC"
+	}
+	return name
 }
 
 func buildStartupMessage(config model.Snapshot, stream byte, function byte, wbit bool, body *hsms.Item) hsms.Message {

@@ -80,6 +80,7 @@ type yamlRuleActionVariable struct {
 type yamlHandshakeConfig struct {
 	AutoS1F13          bool   `yaml:"auto_s1f13"`
 	AutoS1F1           bool   `yaml:"auto_s1f1"`
+	AutoS1F17          bool   `yaml:"auto_s1f17"`
 	AutoS2F25          bool   `yaml:"auto_s2f25"`
 	AutoHostStartup    bool   `yaml:"auto_host_startup"`
 	HostStartupProfile string `yaml:"host_startup_profile"`
@@ -123,6 +124,7 @@ func loadSnapshotFromYAML(path string, base model.Snapshot) (model.Snapshot, err
 		Handshake: model.HandshakeConfig{
 			AutoS1F13:          config.Handshake.AutoS1F13,
 			AutoS1F1:           config.Handshake.AutoS1F1,
+			AutoS1F17:          config.Handshake.AutoS1F17,
 			AutoS2F25:          config.Handshake.AutoS2F25,
 			AutoHostStartup:    hostStartupProfile != model.HostStartupProfileDisabled,
 			HostStartupProfile: hostStartupProfile,
@@ -254,6 +256,7 @@ func snapshotConfig(snapshot model.Snapshot) yamlConfig {
 		Handshake: yamlHandshakeConfig{
 			AutoS1F13:          snapshot.HSMS.Handshake.AutoS1F13,
 			AutoS1F1:           snapshot.HSMS.Handshake.AutoS1F1,
+			AutoS1F17:          snapshot.HSMS.Handshake.AutoS1F17,
 			AutoS2F25:          snapshot.HSMS.Handshake.AutoS2F25,
 			AutoHostStartup:    hostStartupProfile != model.HostStartupProfileDisabled,
 			HostStartupProfile: hostStartupProfile,

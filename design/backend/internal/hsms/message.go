@@ -227,6 +227,18 @@ func BuildS1F17(sessionID uint16, systemBytes uint32) Message {
 	}
 }
 
+func BuildS1F18(sessionID uint16, systemBytes uint32, ack byte) Message {
+	body := Binary(ack)
+	return Message{
+		SessionID:   sessionID,
+		Stream:      1,
+		Function:    18,
+		WBit:        false,
+		SystemBytes: systemBytes,
+		Body:        &body,
+	}
+}
+
 func BuildS2F26(sessionID uint16, systemBytes uint32, body *Item) Message {
 	return Message{
 		SessionID:   sessionID,

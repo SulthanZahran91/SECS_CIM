@@ -83,6 +83,22 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 		t.Fatalf("expected S1F14 auto-response, got %#v", establishAck)
 	}
 
+	online := hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    17,
+		WBit:        true,
+		SystemBytes: 0x01020305 + 1,
+	}
+	writeMessage(t, conn, online)
+	onlineAck := readMessage(t, conn)
+	if onlineAck.Stream != 1 || onlineAck.Function != 18 || onlineAck.SystemBytes != online.SystemBytes {
+		t.Fatalf("expected S1F18 auto-response, got %#v", onlineAck)
+	}
+	if onlineAck.Body == nil || onlineAck.Body.Type != hsms.ItemBinary || onlineAck.Body.Bytes[0] != 0x00 {
+		t.Fatalf("expected S1F18 ack body <B 0x00>, got %#v", onlineAck.Body)
+	}
+
 	command := hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
 		Stream:      2,
@@ -124,18 +140,18 @@ func TestControllerPassiveHSMSSessionDrivesAutoResponsesAndRules(t *testing.T) {
 	}
 
 	waitFor(t, time.Second, func() bool {
-		return len(state.Snapshot().Messages) >= 6
+		return len(state.Snapshot().Messages) >= 8
 	})
 
 	snapshot := state.Snapshot()
-	if len(snapshot.Messages) != 6 {
-		t.Fatalf("expected 6 logged protocol messages, got %d", len(snapshot.Messages))
+	if len(snapshot.Messages) != 8 {
+		t.Fatalf("expected 8 logged protocol messages, got %d", len(snapshot.Messages))
 	}
-	if snapshot.Messages[0].SF != "S1F13" || snapshot.Messages[1].SF != "S1F14" {
-		t.Fatalf("expected auto-response log entries, got %#v", snapshot.Messages[:2])
+	if snapshot.Messages[0].SF != "S1F13" || snapshot.Messages[1].SF != "S1F14" || snapshot.Messages[2].SF != "S1F17" || snapshot.Messages[3].SF != "S1F18" {
+		t.Fatalf("expected handshake auto-response log entries, got %#v", snapshot.Messages[:4])
 	}
-	if snapshot.Messages[2].MatchedRuleID != "rule-1" || snapshot.Messages[3].SF != "S2F42" {
-		t.Fatalf("expected rule match and reply logs, got %#v", snapshot.Messages[2:4])
+	if snapshot.Messages[4].MatchedRuleID != "rule-1" || snapshot.Messages[5].SF != "S2F42" {
+		t.Fatalf("expected rule match and reply logs, got %#v", snapshot.Messages[4:6])
 	}
 }
 
@@ -318,6 +334,54 @@ func TestControllerActiveHSMSSessionReconnectsAfterDisconnect(t *testing.T) {
 	assertLogContains(t, traceOutput, "HSMS tcp connected")
 	assertLogContains(t, traceOutput, "HSMS control OUT Select.req")
 	assertLogContains(t, traceOutput, "HSMS control IN Select.rsp")
+}
+
+func TestControllerPassiveS1F17AutoResponseCanBeDisabled(t *testing.T) {
+	state := store.New()
+	state.ClearLog()
+
+	hsmsConfig := state.ConfigSnapshot().HSMS
+	hsmsConfig.Mode = "passive"
+	hsmsConfig.IP = "127.0.0.1"
+	hsmsConfig.Port = freePort(t)
+	hsmsConfig.Handshake.AutoS1F17 = false
+	state.UpdateHSMS(hsmsConfig)
+
+	controller := New(state)
+	if _, err := controller.Start(); err != nil {
+		t.Fatalf("start controller: %v", err)
+	}
+	defer controller.Stop()
+
+	conn := dialEventually(t, hsmsConfig.Port)
+	defer conn.Close()
+
+	if err := hsms.WriteFrame(conn, hsms.NewControlFrame(uint16(hsmsConfig.SessionID), 0x01020304, hsms.STypeSelectReq, 0)); err != nil {
+		t.Fatalf("write select.req: %v", err)
+	}
+	selectRsp := readFrame(t, conn)
+	if selectRsp.SType != hsms.STypeSelectRsp || selectRsp.ControlCode != hsms.SelectStatusSuccess {
+		t.Fatalf("unexpected select response: %#v", selectRsp)
+	}
+
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    17,
+		WBit:        true,
+		SystemBytes: 0x01020305,
+	})
+
+	if err := conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	_, err := hsms.ReadFrame(conn)
+	if err == nil {
+		t.Fatal("expected no S1F18 response when auto S1F17 is disabled")
+	}
+	if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("expected read timeout waiting for disabled S1F17 response, got %v", err)
+	}
 }
 
 func TestControllerActiveHSMSSessionNormalizesWildcardDialAddress(t *testing.T) {
@@ -539,6 +603,9 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	hsmsConfig.Handshake.AutoHostStartup = true
 	hsmsConfig.Handshake.HostStartupProfile = model.HostStartupProfileConveyor
 	state.UpdateHSMS(hsmsConfig)
+	deviceConfig := state.ConfigSnapshot().Device
+	deviceConfig.Name = "TEST_CNVC"
+	state.UpdateDevice(deviceConfig)
 
 	controller := New(state)
 	started, err := controller.Start()
@@ -562,19 +629,10 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		t.Fatalf("write select.rsp: %v", err)
 	}
 
-	establishReq := readMessage(t, conn)
-	if establishReq.Stream != 1 || establishReq.Function != 13 || !establishReq.WBit {
-		t.Fatalf("expected S1F13 bootstrap request, got %#v", establishReq)
-	}
-	writeMessage(t, conn, hsms.BuildS1F14(uint16(hsmsConfig.SessionID), establishReq.SystemBytes, "EQP-01", "1.2.3"))
-
 	onlineReq := readMessage(t, conn)
 	if onlineReq.Stream != 1 || onlineReq.Function != 17 || !onlineReq.WBit {
 		t.Fatalf("expected S1F17 bootstrap request, got %#v", onlineReq)
 	}
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "3"
-	})
 
 	onlineEvent := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000BEEF, 3)
 	writeMessage(t, conn, onlineEvent)
@@ -583,9 +641,6 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	if eventAck.Stream != 6 || eventAck.Function != 12 || eventAck.SystemBytes != onlineEvent.SystemBytes {
 		t.Fatalf("expected S6F12 ack for interleaved online event, got %#v", eventAck)
 	}
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 1 && step.Expect.Function == 18
-	})
 
 	writeMessage(t, conn, hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
@@ -616,7 +671,7 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	if offlineReq.Stream != 2 || offlineReq.Function != 15 || !offlineReq.WBit || offlineReq.Body == nil {
 		t.Fatalf("expected S2F15 conveyor startup request, got %#v", offlineReq)
 	}
-	if got := offlineReq.Body.Compact(); got != `L:1 L:2 <U2 62> <A "B1ACNV15201">` {
+	if got := offlineReq.Body.Compact(); got != `L:2 <U2 62> <A "TEST_CNVC">` {
 		t.Fatalf("unexpected S2F15 body: %s", got)
 	}
 	writeMessage(t, conn, hsms.Message{
@@ -628,11 +683,11 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
-	disableReportsReq := readMessage(t, conn)
-	if disableReportsReq.Stream != 2 || disableReportsReq.Function != 37 || !disableReportsReq.WBit || disableReportsReq.Body == nil {
-		t.Fatalf("expected S2F37 disable request, got %#v", disableReportsReq)
+	enableCollectionReq := readMessage(t, conn)
+	if enableCollectionReq.Stream != 2 || enableCollectionReq.Function != 37 || !enableCollectionReq.WBit || enableCollectionReq.Body == nil {
+		t.Fatalf("expected first S2F37 request, got %#v", enableCollectionReq)
 	}
-	if got := disableReportsReq.Body.Compact(); got != "L:2 <BOOLEAN FALSE> L:0" {
+	if got := enableCollectionReq.Body.Compact(); got != "L:2 <BOOLEAN TRUE> L:0" {
 		t.Fatalf("unexpected first S2F37 body: %s", got)
 	}
 	writeMessage(t, conn, hsms.Message{
@@ -640,7 +695,7 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Stream:      2,
 		Function:    38,
 		WBit:        false,
-		SystemBytes: disableReportsReq.SystemBytes,
+		SystemBytes: enableCollectionReq.SystemBytes,
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
@@ -660,53 +715,19 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
-	defineReportsReq := readMessage(t, conn)
-	if defineReportsReq.Stream != 2 || defineReportsReq.Function != 33 || !defineReportsReq.WBit || defineReportsReq.Body == nil {
-		t.Fatalf("expected S2F33 define-report request, got %#v", defineReportsReq)
+	resetLinksReq := readMessage(t, conn)
+	if resetLinksReq.Stream != 2 || resetLinksReq.Function != 35 || !resetLinksReq.WBit || resetLinksReq.Body == nil {
+		t.Fatalf("expected S2F35 reset-link request, got %#v", resetLinksReq)
 	}
-	if defineReportsReq.Body.Type != hsms.ItemList || len(defineReportsReq.Body.Children) != 2 {
-		t.Fatalf("unexpected S2F33 define-report shape: %#v", defineReportsReq.Body)
-	}
-	reportList := defineReportsReq.Body.Children[1]
-	if reportList.Type != hsms.ItemList || len(reportList.Children) != len(conveyorReportDefinitions) {
-		t.Fatalf("expected %d report definitions, got %#v", len(conveyorReportDefinitions), reportList)
-	}
-	firstReport := reportList.Children[0]
-	lastReport := reportList.Children[len(reportList.Children)-1]
-	if firstReport.Children[0].Uint16 != 1 || lastReport.Children[0].Uint16 != 73 {
-		t.Fatalf("unexpected report definition bounds: first=%#v last=%#v", firstReport, lastReport)
-	}
-	writeMessage(t, conn, hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      2,
-		Function:    34,
-		WBit:        false,
-		SystemBytes: defineReportsReq.SystemBytes,
-		Body:        itemPtr(hsms.Binary(0x00)),
-	})
-
-	linkReportsReq := readMessage(t, conn)
-	if linkReportsReq.Stream != 2 || linkReportsReq.Function != 35 || !linkReportsReq.WBit || linkReportsReq.Body == nil {
-		t.Fatalf("expected S2F35 link-report request, got %#v", linkReportsReq)
-	}
-	linkList := linkReportsReq.Body.Children[1]
-	if linkList.Type != hsms.ItemList || len(linkList.Children) != len(conveyorLinkedCEIDs) {
-		t.Fatalf("expected %d linked CEIDs, got %#v", len(conveyorLinkedCEIDs), linkList)
-	}
-	firstLink := linkList.Children[0]
-	lastLink := linkList.Children[len(linkList.Children)-1]
-	if firstLink.Children[0].Uint16 != 51 || firstLink.Children[1].Children[0].Uint16 != 1 {
-		t.Fatalf("unexpected first S2F35 link: %#v", firstLink)
-	}
-	if lastLink.Children[0].Uint16 != 711 || lastLink.Children[1].Children[0].Uint16 != 73 {
-		t.Fatalf("unexpected last S2F35 link: %#v", lastLink)
+	if got := resetLinksReq.Body.Compact(); got != "L:2 <U4 1> L:0" {
+		t.Fatalf("unexpected S2F35 body: %s", got)
 	}
 	writeMessage(t, conn, hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
 		Stream:      2,
 		Function:    36,
 		WBit:        false,
-		SystemBytes: linkReportsReq.SystemBytes,
+		SystemBytes: resetLinksReq.SystemBytes,
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
@@ -714,15 +735,8 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	if enableReportsReq.Stream != 2 || enableReportsReq.Function != 37 || !enableReportsReq.WBit || enableReportsReq.Body == nil {
 		t.Fatalf("expected second S2F37 request, got %#v", enableReportsReq)
 	}
-	if enableReportsReq.Body.Type != hsms.ItemList || len(enableReportsReq.Body.Children) != 2 {
-		t.Fatalf("unexpected second S2F37 shape: %#v", enableReportsReq.Body)
-	}
-	enabledCEIDs := enableReportsReq.Body.Children[1]
-	if enabledCEIDs.Type != hsms.ItemList || len(enabledCEIDs.Children) != len(conveyorEnabledCEIDs) {
-		t.Fatalf("expected %d enabled CEIDs, got %#v", len(conveyorEnabledCEIDs), enabledCEIDs)
-	}
-	if enabledCEIDs.Children[0].Uint16 != 1 || enabledCEIDs.Children[len(enabledCEIDs.Children)-1].Uint16 != 711 {
-		t.Fatalf("unexpected enabled CEID bounds: %#v", enabledCEIDs)
+	if got := enableReportsReq.Body.Compact(); got != "L:2 <BOOLEAN TRUE> L:0" {
+		t.Fatalf("unexpected second S2F37 body: %s", got)
 	}
 	writeMessage(t, conn, hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
@@ -733,28 +747,12 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
-	disableAlarmsReq := readMessage(t, conn)
-	if disableAlarmsReq.Stream != 5 || disableAlarmsReq.Function != 3 || !disableAlarmsReq.WBit || disableAlarmsReq.Body == nil {
-		t.Fatalf("expected first S5F3 request, got %#v", disableAlarmsReq)
-	}
-	if got := disableAlarmsReq.Body.Compact(); got != "L:2 <B 0x00> <U4 0>" {
-		t.Fatalf("unexpected first S5F3 body: %s", got)
-	}
-	writeMessage(t, conn, hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      5,
-		Function:    4,
-		WBit:        false,
-		SystemBytes: disableAlarmsReq.SystemBytes,
-		Body:        itemPtr(hsms.Binary(0x00)),
-	})
-
 	enableAlarmsReq := readMessage(t, conn)
 	if enableAlarmsReq.Stream != 5 || enableAlarmsReq.Function != 3 || !enableAlarmsReq.WBit || enableAlarmsReq.Body == nil {
-		t.Fatalf("expected second S5F3 request, got %#v", enableAlarmsReq)
+		t.Fatalf("expected S5F3 request, got %#v", enableAlarmsReq)
 	}
-	if got := enableAlarmsReq.Body.Compact(); got != "L:2 <B 0x80> <U4 0>" {
-		t.Fatalf("unexpected second S5F3 body: %s", got)
+	if got := enableAlarmsReq.Body.Compact(); got != "L:2 <B 0x01> <U4 0>" {
+		t.Fatalf("unexpected S5F3 body: %s", got)
 	}
 	writeMessage(t, conn, hsms.Message{
 		SessionID:   uint16(hsmsConfig.SessionID),
@@ -765,22 +763,6 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		Body:        itemPtr(hsms.Binary(0x00)),
 	})
 
-	statusReq := readMessage(t, conn)
-	if statusReq.Stream != 1 || statusReq.Function != 3 || !statusReq.WBit || statusReq.Body == nil {
-		t.Fatalf("expected S1F3 status request, got %#v", statusReq)
-	}
-	if got := statusReq.Body.Compact(); got != "L:1 <U2 6>" {
-		t.Fatalf("unexpected S1F3 body: %s", got)
-	}
-	writeMessage(t, conn, hsms.Message{
-		SessionID:   uint16(hsmsConfig.SessionID),
-		Stream:      1,
-		Function:    4,
-		WBit:        false,
-		SystemBytes: statusReq.SystemBytes,
-		Body:        exampleConveyorStatusReply(t, 6),
-	})
-
 	pauseReq := readMessage(t, conn)
 	if pauseReq.Stream != 2 || pauseReq.Function != 41 || !pauseReq.WBit || pauseReq.Body == nil {
 		t.Fatalf("expected PAUSE S2F41 request, got %#v", pauseReq)
@@ -789,9 +771,6 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 		t.Fatalf("unexpected PAUSE command body: %s", got)
 	}
 	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), pauseReq.SystemBytes, 0))
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "57"
-	})
 
 	pauseInitiated := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA02, 57)
 	writeMessage(t, conn, pauseInitiated)
@@ -799,74 +778,50 @@ func TestControllerActiveHostStartupConveyorBootstrapsAfterSelect(t *testing.T) 
 	if pauseInitiatedAck.Stream != 6 || pauseInitiatedAck.Function != 12 || pauseInitiatedAck.SystemBytes != pauseInitiated.SystemBytes {
 		t.Fatalf("expected S6F12 ack for pause initiated event, got %#v", pauseInitiatedAck)
 	}
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "55"
-	})
+	firstStatusReq := readMessage(t, conn)
+	if firstStatusReq.Stream != 1 || firstStatusReq.Function != 3 || !firstStatusReq.WBit || firstStatusReq.Body == nil || firstStatusReq.Body.Compact() != "L:1 <U2 4>" {
+		t.Fatalf("expected first S1F3 status request, got %#v", firstStatusReq)
+	}
 
-	logCursor := len(state.Snapshot().Messages)
 	pauseCompleted := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA03, 55)
 	writeMessage(t, conn, pauseCompleted)
 	pauseCompletedAck := readMessage(t, conn)
 	if pauseCompletedAck.Stream != 6 || pauseCompletedAck.Function != 12 || pauseCompletedAck.SystemBytes != pauseCompleted.SystemBytes {
 		t.Fatalf("expected S6F12 ack for pause completed event, got %#v", pauseCompletedAck)
 	}
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		if step.Expect.Stream != 1 || step.Expect.Function != 4 || step.Send == nil {
-			return false
-		}
-		nextMessage, err := step.Send(state.ConfigSnapshot())
-		return err == nil && nextMessage.Stream == 1 && nextMessage.Function == 3 && nextMessage.Body != nil && nextMessage.Body.Compact() == "L:1 <U2 98>"
+
+	writeMessage(t, conn, hsms.Message{
+		SessionID:   uint16(hsmsConfig.SessionID),
+		Stream:      1,
+		Function:    4,
+		WBit:        false,
+		SystemBytes: firstStatusReq.SystemBytes,
+		Body:        exampleConveyorStatusReply(t, 4),
 	})
 
-	for _, svid := range []uint16{98, 81, 83, 4, 401, 507, 509, 511, 76, 628, 631, 632} {
-		var requestRecord model.MessageRecord
-		requestRecord, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
-			return record.Direction == "OUT" &&
-				record.SF == "S1F3" &&
-				record.Detail.RawSML == fmt.Sprintf("S1F3 W L:1 <U2 %d>", svid)
-		})
-		if requestRecord.Label != "S1F3" {
-			t.Fatalf("expected logged S1F3 request for SVID %d, got %#v", svid, requestRecord)
+	for _, svid := range conveyorStatusSVIDs[1:] {
+		statusReq := readMessage(t, conn)
+		if statusReq.Stream != 1 || statusReq.Function != 3 || !statusReq.WBit || statusReq.Body == nil {
+			t.Fatalf("expected S1F3 status request for SVID %d, got %#v", svid, statusReq)
+		}
+		if got := statusReq.Body.Compact(); got != fmt.Sprintf("L:1 <U2 %d>", svid) {
+			t.Fatalf("unexpected S1F3 body for SVID %d: %s", svid, got)
 		}
 		writeMessage(t, conn, hsms.Message{
 			SessionID:   uint16(hsmsConfig.SessionID),
 			Stream:      1,
 			Function:    4,
 			WBit:        false,
-			SystemBytes: 0x0000D000 + uint32(svid),
+			SystemBytes: statusReq.SystemBytes,
 			Body:        exampleConveyorStatusReply(t, svid),
 		})
 	}
 
-	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
-		return record.Direction == "OUT" &&
-			record.SF == "S2F41" &&
-			record.Detail.RawSML == `S2F41 W L:2 <A "RESUME"> L:0`
-	})
-	writeMessage(t, conn, hsms.BuildS2F42(uint16(hsmsConfig.SessionID), 0x0000D100, 0))
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "53"
-	})
-
-	autoComplete := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA04, 53)
-	writeMessage(t, conn, autoComplete)
-	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
-		return record.Direction == "OUT" && record.SF == "S6F12" && record.Detail.RawSML == "S6F12 <B 0x00>"
-	})
-	waitForBootstrapStep(t, controller, func(step hostBootstrapStep) bool {
-		return step.Expect.Stream == 6 && step.Expect.Function == 11 && step.Expect.CEID == "601"
-	})
-
-	conveyorChange := exampleConveyorEvent(t, uint16(hsmsConfig.SessionID), 0x0000CA05, 601)
-	writeMessage(t, conn, conveyorChange)
-	_, logCursor = waitForLoggedMessage(t, state, logCursor, func(record model.MessageRecord) bool {
-		return record.Direction == "OUT" && record.SF == "S6F12" && record.Detail.RawSML == "S6F12 <B 0x00>"
-	})
 	waitForBootstrapCleared(t, controller)
 
 	waitFor(t, time.Second, func() bool {
 		messages := state.Snapshot().Messages
-		return len(messages) >= 48 && messages[0].SF == "S1F13" && messages[len(messages)-1].SF == "S6F12"
+		return len(messages) >= 24 && messages[0].SF == "S1F17" && messages[len(messages)-1].SF == "S1F4"
 	})
 }
 
@@ -1113,8 +1068,30 @@ func exampleConveyorStatusReply(t *testing.T, svid uint16) *hsms.Item {
 
 	var body hsms.Item
 	switch svid {
+	case 5:
+		body = hsms.List(hsms.ASCII("2026031706442112"))
 	case 6:
 		body = hsms.List(hsms.U1(5))
+	case 51:
+		body = hsms.List(hsms.List(
+			hsms.ASCII("TEST"),
+			hsms.ASCII("B1ACNV13201-303"),
+		))
+	case 52:
+		body = hsms.List(hsms.List())
+	case 53:
+		body = hsms.List(
+			hsms.List(
+				hsms.ASCII("B1ACNV13201-303"),
+				hsms.ASCII("2026031702450439"),
+				hsms.U2(15),
+				hsms.U2(0),
+				hsms.U2(0),
+				hsms.U2(1),
+				hsms.ASCII(""),
+				hsms.ASCII(""),
+			),
+		)
 	case 98:
 		body = hsms.List(hsms.List(hsms.ASCII("SEMI.0309")))
 	case 81, 83, 4, 628, 631, 632:

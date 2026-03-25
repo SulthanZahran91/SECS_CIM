@@ -12,7 +12,7 @@ hsms:
     t8: 5
 
 device:
-  name: host-conveyor
+  name: TEST_CNVC
   protocol: e88
   mdln: HOST-SIM
   softrev: 1.0.0
@@ -20,6 +20,7 @@ device:
 handshake:
   auto_s1f13: true
   auto_s1f1: true
+  auto_s1f17: true
   auto_s2f25: false
   auto_host_startup: true
   host_startup_profile: conveyor

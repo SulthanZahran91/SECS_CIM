@@ -316,6 +316,8 @@ func autoResponseForMessage(config model.Snapshot, message hsms.Message) (hsms.M
 		return hsms.BuildS1F14(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
 	case message.Stream == 1 && message.Function == 1 && config.HSMS.Handshake.AutoS1F1:
 		return hsms.BuildS1F2(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, config.Device.MDLN, config.Device.SoftRev), true
+	case message.Stream == 1 && message.Function == 17 && config.HSMS.Handshake.AutoS1F17:
+		return hsms.BuildS1F18(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, 0x00), true
 	case message.Stream == 2 && message.Function == 25 && config.HSMS.Handshake.AutoS2F25:
 		return hsms.BuildS2F26(model.HSMSHeaderSessionID(config.HSMS), message.SystemBytes, message.Body), true
 	default:

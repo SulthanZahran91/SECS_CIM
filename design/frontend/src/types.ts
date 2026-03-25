@@ -36,6 +36,7 @@ export interface HsmsTimers {
 export interface HandshakeConfig {
   autoS1f13: boolean;
   autoS1f1: boolean;
+  autoS1f17: boolean;
   autoS2f25: boolean;
   autoHostStartup: boolean;
   hostStartupProfile: string;

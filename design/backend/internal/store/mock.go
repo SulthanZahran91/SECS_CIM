@@ -28,6 +28,7 @@ func seedSnapshot() model.Snapshot {
 			Handshake: model.HandshakeConfig{
 				AutoS1F13:          true,
 				AutoS1F1:           true,
+				AutoS1F17:          true,
 				AutoS2F25:          false,
 				AutoHostStartup:    false,
 				HostStartupProfile: model.HostStartupProfileDisabled,

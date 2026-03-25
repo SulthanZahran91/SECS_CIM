@@ -4,7 +4,7 @@ import type { DeviceConfig, HsmsConfig } from "../types";
 const hostStartupProfileOptions = [
   { value: "disabled", label: "Disabled" },
   { value: "stocker", label: "Stocker / Minimal" },
-  { value: "conveyor", label: "Conveyor / Example Log" },
+  { value: "conveyor", label: "Conveyor / Captured Trace" },
 ];
 
 interface HsmsTabProps {
@@ -25,7 +25,7 @@ function describeHostStartupProfile(profile: string): string {
     case "stocker":
       return "Current minimal bring-up: S1F13, S1F17, S2F31, plus S6F11 acknowledgements.";
     case "conveyor":
-      return "Extended conveyor startup from example_conveyor_handshake.log, including report setup, pause/resume, alarms, and status polling.";
+      return "Conveyor startup based on the captured working host/equipment trace: S1F17 bring-up, pause/event acknowledgement, and early status polling.";
     default:
       return "No automated host bring-up runs after HSMS select.";
   }
@@ -261,6 +261,18 @@ export function HsmsTab({ hsms, device, restartRequired, onChangeHsms, onChangeD
                 }
               />
               <span className="toggle-copy-title">S1F1 Are You There</span>
+            </div>
+            <div className="toggle-row">
+              <TogglePill
+                checked={hsms.handshake.autoS1f17}
+                onToggle={() =>
+                  onChangeHsms({
+                    ...hsms,
+                    handshake: { ...hsms.handshake, autoS1f17: !hsms.handshake.autoS1f17 },
+                  })
+                }
+              />
+              <span className="toggle-copy-title">S1F17 Request On-Line</span>
             </div>
             <div className="toggle-row">
               <TogglePill
